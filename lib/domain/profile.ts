@@ -43,7 +43,12 @@ export interface PatientProfile {
   tiers: { tier: string; coaseguroPorcentaje: number; copagoFijo: number }[];
   /** Plain-language notes about this patient's situation, most important first. */
   enTuCaso: string[];
+  /** Worked example for "how is my copay computed", once the deductible is covered. */
+  ejemplo: { tier: string; precio: number; coaseguro: number; copagoFijo: number; total: number } | null;
 }
+
+const EXAMPLE_PRICE = 65;
+const EXAMPLE_TIER = "B";
 
 function roundTo2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -122,5 +127,33 @@ export function buildPatientProfile(input: ProfileInput): PatientProfile {
       .sort((a, b) => a.tier.localeCompare(b.tier))
       .map((t) => ({ tier: t.tier, coaseguroPorcentaje: Math.round(t.coaseguro * 100), copagoFijo: t.copagoFijo })),
     enTuCaso,
+    ejemplo: buildExample(input.tiers),
   };
+}
+
+function buildExample(tiers: ProfileInput["tiers"]): PatientProfile["ejemplo"] {
+  const tier = tiers.find((t) => t.tier === EXAMPLE_TIER);
+  if (!tier) return null;
+  const coaseguro = roundTo2(EXAMPLE_PRICE * tier.coaseguro);
+  const total = roundTo2(Math.min(EXAMPLE_PRICE, coaseguro + tier.copagoFijo));
+  return { tier: EXAMPLE_TIER, precio: EXAMPLE_PRICE, coaseguro, copagoFijo: tier.copagoFijo, total };
+}
+
+export type HighlightTone = "ok" | "warning" | "danger" | "neutral";
+
+/** One short line that tells patients apart in the list, most important situation first. */
+export function patientHighlight(input: Omit<ProfileInput, "tiers">): { texto: string; tono: HighlightTone } {
+  const { plan } = input;
+  if (!input.activa) return { texto: "Póliza inactiva", tono: "danger" };
+
+  const carencia = computeCarencia(input.fechaInicio, plan.carenciaEspecialidadDias, input.today);
+  if (carencia.enCarencia) return { texto: `En carencia, ${carencia.diasRestantes} días`, tono: "warning" };
+
+  const topeRestante = Math.max(plan.topeAnualBolsillo - input.gastoAcumulado, 0);
+  if (topeRestante === 0) return { texto: "Tope anual alcanzado", tono: "ok" };
+  if (topeRestante <= plan.topeAnualBolsillo * 0.1) return { texto: "Casi en su tope anual", tono: "warning" };
+
+  if (plan.deducibleAnual === 0) return { texto: "Sin deducible", tono: "ok" };
+  if (input.deducibleUsado >= plan.deducibleAnual) return { texto: "Deducible cubierto", tono: "ok" };
+  return { texto: "Aún no usa su deducible", tono: "neutral" };
 }

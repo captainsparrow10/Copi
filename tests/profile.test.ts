@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPatientProfile, type ProfileInput } from "@/lib/domain/profile";
+import { buildPatientProfile, patientHighlight, type ProfileInput } from "@/lib/domain/profile";
 
 const base: ProfileInput = {
   poliza: "POL-1001",
@@ -80,5 +80,33 @@ describe("buildPatientProfile", () => {
     expect(profile.enTuCaso.join(" ")).toMatch(/tope[^.]*\$5\.00/i);
     // 995 of 1000 must not read as a full bar while $5 are still left.
     expect(profile.tope.porcentajeUsado).toBe(99);
+  });
+});
+
+describe("patientHighlight", () => {
+  it("flags an inactive policy above anything else", () => {
+    expect(patientHighlight({ ...base, activa: false })).toEqual({ texto: "Póliza inactiva", tono: "danger" });
+  });
+
+  it("shows the waiting period with its days left", () => {
+    const input = { ...base, plan: { ...base.plan, carenciaEspecialidadDias: 30 }, fechaInicio: new Date("2026-09-06T12:00:00Z") };
+    expect(patientHighlight(input)).toEqual({ texto: "En carencia, 20 días", tono: "warning" });
+  });
+
+  it("prefers a nearly reached cap over the deductible state", () => {
+    const input = { ...base, plan: { ...base.plan, deducibleAnual: 0, topeAnualBolsillo: 1000 }, gastoAcumulado: 995 };
+    expect(patientHighlight(input)).toEqual({ texto: "Casi en su tope anual", tono: "warning" });
+  });
+
+  it("distinguishes a covered deductible from an untouched one", () => {
+    expect(patientHighlight({ ...base, deducibleUsado: 150 })).toEqual({ texto: "Deducible cubierto", tono: "ok" });
+    expect(patientHighlight(base)).toEqual({ texto: "Aún no usa su deducible", tono: "neutral" });
+  });
+});
+
+describe("buildPatientProfile — worked example", () => {
+  it("prices a $65 tier B consultation with the plan's own coinsurance and copay", () => {
+    // Estándar tier B: 20% of $65 = $13, + $10 copay = $23.
+    expect(buildPatientProfile(base).ejemplo).toEqual({ tier: "B", precio: 65, coaseguro: 13, copagoFijo: 10, total: 23 });
   });
 });
