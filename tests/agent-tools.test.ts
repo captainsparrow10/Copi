@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { buildTools } from "@/lib/agent/tools";
 
@@ -11,7 +12,7 @@ import { buildTools } from "@/lib/agent/tools";
  */
 describe("lib/agent/tools — PRD 7.5", () => {
   it("buscar_especialidad dedupes multiple fragments from the same specialty, keeping the best score", async () => {
-    const tools = await buildTools("POL-1001");
+    const tools = await buildTools("POL-1001", randomUUID());
     const result = (await tools.buscar_especialidad.execute!(
       { sintoma: "me duele la rodilla al subir escaleras" },
       { toolCallId: "t1", messages: [], context: {} },
@@ -23,7 +24,7 @@ describe("lib/agent/tools — PRD 7.5", () => {
   });
 
   it("cotizar_consulta flags carencia for POL-1004 + cardiologia (10 days in, 30-day waiting period)", async () => {
-    const tools = await buildTools("POL-1004");
+    const tools = await buildTools("POL-1004", randomUUID());
     // Ordering enforcement (PRD Anexo A rule 3) requires buscar_especialidad
     // to run first in the same turn — see the dedicated test below for the
     // enforcement itself.
@@ -50,7 +51,7 @@ describe("lib/agent/tools — PRD 7.5", () => {
   });
 
   it("cotizar_consulta returns a tool-result-level POLIZA_INACTIVA error for POL-1005, not a thrown exception", async () => {
-    const tools = await buildTools("POL-1005");
+    const tools = await buildTools("POL-1005", randomUUID());
     const result = (await tools.cotizar_consulta.execute!(
       { especialidad: "cardiologia" },
       { toolCallId: "t3", messages: [], context: {} },
@@ -69,7 +70,7 @@ describe("lib/agent/tools — PRD 7.5", () => {
    * the message.
    */
   it("cotizar_consulta returns FALTA_BUSCAR_ESPECIALIDAD when buscar_especialidad wasn't called this turn", async () => {
-    const tools = await buildTools("POL-1001");
+    const tools = await buildTools("POL-1001", randomUUID());
     const result = (await tools.cotizar_consulta.execute!(
       { especialidad: "cardiologia" },
       { toolCallId: "t5", messages: [], context: {} },
@@ -87,7 +88,7 @@ describe("lib/agent/tools — PRD 7.5", () => {
    * turn. The tool itself must refuse that.
    */
   it("cotizar_consulta returns SIN_ESPECIALIDAD_CONFIRMADA when buscar_especialidad returned SIN_COINCIDENCIAS this turn", async () => {
-    const tools = await buildTools("POL-1001");
+    const tools = await buildTools("POL-1001", randomUUID());
     await tools.buscar_especialidad.execute!(
       { sintoma: "no me siento bien pero no se decir que es exactamente" },
       { toolCallId: "t7a", messages: [], context: {} },
@@ -102,7 +103,7 @@ describe("lib/agent/tools — PRD 7.5", () => {
   });
 
   it("cotizar_consulta succeeds once buscar_especialidad has been called earlier in the same turn", async () => {
-    const tools = await buildTools("POL-1001");
+    const tools = await buildTools("POL-1001", randomUUID());
     await tools.buscar_especialidad.execute!(
       { sintoma: "tengo palpitaciones" },
       { toolCallId: "t6a", messages: [], context: {} },
@@ -117,7 +118,7 @@ describe("lib/agent/tools — PRD 7.5", () => {
   });
 
   it("obtener_resumen_plan returns the documented shape", async () => {
-    const tools = await buildTools("POL-1001");
+    const tools = await buildTools("POL-1001", randomUUID());
     const result = (await tools.obtener_resumen_plan.execute!(
       {},
       { toolCallId: "t4", messages: [], context: {} },

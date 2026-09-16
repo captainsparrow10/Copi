@@ -33,7 +33,11 @@ import {
   type ToolSet,
 } from "ai";
 import { db } from "../db/client";
-import { asegurados, planes, trazas } from "../db/schema";
+import { asegurados, planes } from "../db/schema";
+import { logTrace } from "../db/trace";
+import { getActiveQuote, type QuoteRow } from "../db/quotes";
+import { buildGroundedToolResults, formatQuoteContextBlock } from "../domain/quote-grounding";
+import { decideStepTools } from "./step-policy";
 import { getSession } from "../session";
 import { checkRateLimit } from "../guards/rate-limit";
 import { buildEmergencyResponse, detectEmergency, type EmergencyDetection } from "../guards/emergency";
@@ -74,20 +78,7 @@ interface ToolResultRecord {
   output: unknown;
 }
 
-async function logTrace(
-  sesionId: string,
-  evento: "tool_call" | "emergency_bypass" | "validation_block" | "error",
-  detalle: Record<string, unknown>,
-): Promise<void> {
-  try {
-    await db.insert(trazas).values({ sesionId, evento, detalle });
-  } catch (err) {
-    // Tracing must never break a chat turn.
-    console.error("Failed to write traza:", err);
-  }
-}
-
-async function loadNombrePlan(poliza: string): Promise<{ nombre: string; plan: string } | null> {
+export async function loadNombrePlan(poliza: string): Promise<{ nombre: string; plan: string } | null> {
   const rows = await db
     .select({ nombre: asegurados.nombre, plan: planes.nombre })
     .from(asegurados)
@@ -153,6 +144,8 @@ interface LocalTextEnd {
 
 function createGroundingTransform<TOOLS extends ToolSet>(
   toolResultsAcc: ToolResultRecord[],
+  /** Builds the validators' grounding set from this turn's results at validation time. */
+  groundingSet: (current: ToolResultRecord[]) => ToolResultRecord[],
   onBlock: (reason: {
     invalidAmounts: string[];
     invalidCitations: string[];
@@ -169,8 +162,9 @@ function createGroundingTransform<TOOLS extends ToolSet>(
     const flush = (controller: TransformStreamDefaultController<Part>) => {
       if (!textStart) return;
       const fullText = deltas.map((d) => d.text).join("");
-      const amounts = validateAmounts(fullText, toolResultsAcc);
-      const citations = validateCitations(fullText, toolResultsAcc);
+      const grounded = groundingSet(toolResultsAcc);
+      const amounts = validateAmounts(fullText, grounded);
+      const citations = validateCitations(fullText, grounded);
       // PRD 7.8 grounding, Phase 5 evals bug 4a: qwen2.5:14b occasionally
       // leaks raw tool-call syntax as prose instead of issuing a real tool
       // call (_icall_ markers, <tool_call> blocks, bare {"name":...,
@@ -242,7 +236,7 @@ export async function runChat({ ip, messages }: { ip: string; messages: ChatMess
   if (!session) {
     return { kind: "error", status: 401, code: "NO_SESSION", message: "No hay una sesión activa. Selecciona tu póliza para continuar." };
   }
-  return runChatForPoliza({ poliza: session.poliza, ip, messages });
+  return runChatForPoliza({ poliza: session.poliza, sesionId: session.sid, ip, messages });
 }
 
 /**
@@ -261,14 +255,16 @@ export async function runChat({ ip, messages }: { ip: string; messages: ChatMess
  */
 export async function runChatForPoliza({
   poliza,
+  sesionId,
   ip,
   messages,
 }: {
   poliza: string;
+  /** Browser session id (JWT `sid`): scopes rate limiting, traces and the persisted quote. */
+  sesionId: string;
   ip: string;
   messages: ChatMessage[];
 }): Promise<RunChatResult> {
-  const sesionId = poliza;
 
   // 2. Rate limit.
   const rate = checkRateLimit(sesionId, ip);
@@ -309,12 +305,37 @@ export async function runChatForPoliza({
 
   // 5-7. streamText + grounding + tracing.
   try {
-    const tools = await buildTools(poliza);
+    const tools = await buildTools(poliza, sesionId);
+
+    // Cross-turn grounding bug fix: a follow-up question ("qué diferencia
+    // hay con el recomendado") never calls cotizar_consulta again this
+    // turn, but the amount validator (7.8 layer 6) only ever grounds
+    // against THIS turn's toolResultsAcc — so the previous turn's amounts
+    // read as "invented" and get blocked (validation_block). Loading the
+    // poliza's persisted active quote (lib/db/quotes.ts) and folding it
+    // into both the system prompt and the grounding set fixes that without
+    // trusting anything the client sends (see lib/domain/quote-grounding.ts).
+    const activeQuote: QuoteRow | null = await getActiveQuote(sesionId);
+    const storedQuoteContext = activeQuote
+      ? {
+          especialidadId: activeQuote.especialidadId,
+          seleccion: activeQuote.seleccion,
+          estado: activeQuote.estado,
+          payload: activeQuote.payload,
+        }
+      : null;
+
+    const quoteContextBlock = formatQuoteContextBlock(storedQuoteContext);
     const systemPrompt = buildSystemPrompt(info.nombre, info.plan);
+    const instructions = quoteContextBlock ? `${systemPrompt}\n\n${quoteContextBlock}` : systemPrompt;
+
     const history: ModelMessage[] = messages
       .slice(-HISTORY_LIMIT)
       .map((m) => ({ role: m.role, content: m.content }));
 
+    // This turn's real tool results only. The stored quote is folded in at
+    // validation time, and only for pure follow-up turns (see
+    // lib/domain/quote-grounding.ts), so a new symptom can't reuse stale prices.
     const toolResultsAcc: ToolResultRecord[] = [];
     let blocked: {
       invalidAmounts: string[];
@@ -335,7 +356,7 @@ export async function runChatForPoliza({
 
     const result = streamText({
       model: getChatModel(),
-      instructions: systemPrompt,
+      instructions,
       messages: history,
       tools,
       temperature: 0.2,
@@ -354,20 +375,20 @@ export async function runChatForPoliza({
       // errors stay as a defense-in-depth fallback for any edge case this
       // narrowing doesn't cover (e.g. a provider that ignores activeTools).
       prepareStep: ({ steps }) => {
-        const toolResultsSoFar = steps.flatMap((step) => step.toolResults);
-        const lastBuscarEspecialidad = [...toolResultsSoFar]
-          .reverse()
-          .find((result) => result.toolName === "buscar_especialidad");
-        const output = lastBuscarEspecialidad?.output as { motivo?: string } | undefined;
-        const canQuote = lastBuscarEspecialidad !== undefined && output?.motivo !== "SIN_COINCIDENCIAS";
-        if (!canQuote) {
-          return { activeTools: ["buscar_especialidad", "obtener_resumen_plan", "buscar_en_poliza"] };
-        }
-        return undefined;
+        const decision = decideStepTools(steps.flatMap((step) => step.toolResults));
+        return "activeTools" in decision
+          ? { activeTools: decision.activeTools as Array<keyof typeof tools> }
+          : "toolChoice" in decision
+            ? { toolChoice: decision.toolChoice }
+            : undefined;
       },
-      experimental_transform: createGroundingTransform<typeof tools>(toolResultsAcc, (reason) => {
-        blocked = reason;
-      }),
+      experimental_transform: createGroundingTransform<typeof tools>(
+        toolResultsAcc,
+        (current) => buildGroundedToolResults(current, storedQuoteContext),
+        (reason) => {
+          blocked = reason;
+        },
+      ),
       onFinish: async () => {
         if (blocked) {
           await logTrace(sesionId, "validation_block", { ...blocked });

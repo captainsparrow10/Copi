@@ -18,6 +18,8 @@ import { asegurados, especialidades, hospitales, planes, planTierReglas, tarifar
 import { buscarEnGuiaEspecialidades, buscarEnPoliza } from "../rag/search";
 import { calcularCopago, PolizaInactivaError, type PlanRules } from "../domain/copay";
 import { pickRecommended } from "../domain/recommend";
+import type { CarenciaStatus, OpcionCotizacion, CotizarConsultaSuccess } from "../domain/quote-types";
+import { saveQuote } from "../db/quotes";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -84,33 +86,12 @@ async function loadAseguradoContext(poliza: string): Promise<AseguradoContext> {
   };
 }
 
-export interface CarenciaStatus {
-  enCarencia: boolean;
-  diasRestantes?: number;
-}
-
-export interface OpcionCotizacion {
-  hospital: string;
-  tier: string;
-  zona: string;
-  precio: number;
-  a_deducible: number;
-  coaseguro: number;
-  copago_fijo: number;
-  total_paciente: number;
-  total_aseguradora: number;
-  marcas: string[];
-}
-
-/** Success shape of `cotizar_consulta` (PRD 7.5). Shared with the UI (components/QuoteCard.tsx) so the
- * quote card renders straight from this type — never by parsing the model's text (PRD Anexo C rule 4). */
-export interface CotizarConsultaSuccess {
-  plan: string;
-  especialidad: string;
-  carencia: CarenciaStatus;
-  recomendado: string | null;
-  opciones: OpcionCotizacion[];
-}
+// CarenciaStatus / OpcionCotizacion / CotizarConsultaSuccess now live in
+// lib/domain/quote-types.ts (needed there by lib/db/schema.ts's `cotizaciones.payload`
+// column and lib/db/quotes.ts, without a circular import back into this
+// module). Re-exported here so existing imports (components/QuoteCard.tsx,
+// lib/chat/ui-message.ts, tests) keep working unchanged.
+export type { CarenciaStatus, OpcionCotizacion, CotizarConsultaSuccess };
 
 /** Error shape of `cotizar_consulta` when the policy is inactive (PRD 7.4 rule 1). */
 export interface CotizarConsultaError {
@@ -157,8 +138,11 @@ export function isCotizarConsultaSuccess(output: CotizarConsultaOutput): output 
   return !("error" in output);
 }
 
-/** Builds the four agent tools, closed over `poliza` (PRD 7.5: no tool accepts a policy number). */
-export async function buildTools(poliza: string) {
+/**
+ * Builds the four agent tools, closed over `poliza` (PRD 7.5: no tool accepts a policy number)
+ * and the browser session id, which scopes the persisted quote.
+ */
+export async function buildTools(poliza: string, sesionId: string) {
   const [especialidadEnum, ctx] = await Promise.all([buildEspecialidadEnum(), loadAseguradoContext(poliza)]);
 
   // Per-turn ordering state (PRD Anexo A rule 3: buscar_especialidad ->
@@ -324,13 +308,21 @@ export async function buildTools(poliza: string) {
           return a.hospital.localeCompare(b.hospital);
         });
 
-        return {
+        const success: CotizarConsultaSuccess = {
           plan: ctx.planNombre,
           especialidad,
           carencia,
           recomendado: pickRecommended(opciones),
           opciones,
         };
+
+        // Persist as the session's new active quote (feature: select/close +
+        // cross-turn grounding, see lib/db/quotes.ts and lib/agent/run.ts).
+        // Never trust anything the client sends for this — this row is built
+        // entirely from the domain calculation above.
+        await saveQuote({ sesionId, poliza, especialidadId: especialidad, payload: success });
+
+        return success;
       } catch (err) {
         if (err instanceof PolizaInactivaError) {
           return { error: "POLIZA_INACTIVA" as const, mensaje: err.message };
