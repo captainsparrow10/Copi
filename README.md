@@ -153,8 +153,8 @@ npx -y @insforge/cli login
 npx -y @insforge/cli create --name copi --region us-east --template empty
 
 # Base de datos
-npx -y @insforge/cli db connection-string   # úsala como DATABASE_URL en .env.local
-npm run db:migrate && npm run db:seed && npm run ingest
+npx -y @insforge/cli db connection-string   # úsala como DATABASE_URL en .env.prod
+(set -a && . ./.env.prod && set +a && npm run db:migrate && npm run db:seed && npm run ingest)
 
 # Variables de la app (una por una, con tus valores)
 npx -y @insforge/cli deployments env set LLM_PROVIDER deepseek
@@ -195,7 +195,7 @@ Lo que llevó de 37 a 40:
 - **Umbral propio para pólizas** (`RAG_POLICY_MIN_SCORE=0.68`): las preguntas de cobertura puntuaban alto contra cláusulas no relacionadas.
 - **Dos entradas coloquiales más** en la guía (reflujo frecuente, niño enfermo).
 
-Las evaluaciones corren contra una base de pruebas (`.env.local`), no contra producción.
+Las evaluaciones y los tests corren contra una base de pruebas (`.env.local`), no contra producción; los valores de producción viven en `.env.prod` (ignorado por git) y en las variables del despliegue.
 
 ---
 
