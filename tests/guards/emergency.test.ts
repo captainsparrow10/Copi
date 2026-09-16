@@ -2,11 +2,8 @@ import { describe, expect, it } from "vitest";
 import { detectEmergency, EMERGENCY_RESPONSE } from "@/lib/guards/emergency";
 
 /**
- * Matching strategy (see lib/guards/emergency.ts): accent-insensitive,
- * case-insensitive SUBSTRING match of each Anexo B phrase against the
- * normalized message — not keyword/fuzzy matching. So these "realistic
- * phrasing" cases embed the alarm phrase verbatim (accented or not) inside
- * a longer, more natural sentence, rather than paraphrasing it away.
+ * Verbatim Anexo B phrases (accented or not) embedded in longer messages.
+ * Patient paraphrases are covered in the "patient phrasing" suite below.
  */
 describe("detectEmergency — Anexo B alarm phrases", () => {
   it("matches chest pain / pressure, embedded in a longer accented message", () => {
@@ -104,9 +101,72 @@ describe("detectEmergency — Anexo B alarm phrases", () => {
     expect(r.matchedPhrase).toBe("Dolor o presión en el pecho");
   });
 
+  it("returns the matched Anexo B category for patient phrasing too", () => {
+    const r = detectEmergency("Tengo dolor de pecho y me falta el aire");
+    expect(r.isEmergency).toBe(true);
+    expect(r.matchedPhrase).toBe("Dolor o presión en el pecho");
+  });
+
   it("EMERGENCY_RESPONSE is the exact fixed response text from Anexo B", () => {
     expect(EMERGENCY_RESPONSE).toBe(
       "Lo que describes puede ser una emergencia. Acude de inmediato a la sala de urgencias más cercana o llama al 911. No esperes a cotizar.",
     );
+  });
+});
+
+/**
+ * Real patients do not write the Anexo B phrases verbatim. Each category must
+ * also catch the way people actually describe it (PRD flow 6.3 example included).
+ */
+describe("detectEmergency — patient phrasing", () => {
+  const alarms: [string, string][] = [
+    ["PRD flow 6.3 example", "Tengo dolor de pecho y me falta el aire"],
+    ["chest tightness", "siento una opresión en el pecho"],
+    ["chest hurts", "me duele mucho el pecho"],
+    ["can't breathe", "no puedo respirar bien"],
+    ["hard to breathe", "me cuesta respirar desde hace una hora"],
+    ["short of breath", "me estoy ahogando"],
+    ["fainted", "mi mamá se desmayó en la cocina"],
+    ["lost consciousness", "perdió el conocimiento unos segundos"],
+    ["seizure", "mi hijo está convulsionando"],
+    ["stroke: face droop", "a mi abuelo se le ve la cara torcida"],
+    ["stroke: cannot move arm", "de repente no puede mover el brazo derecho"],
+    ["bleeding won't stop", "me corté y no para de sangrar"],
+    ["hemorrhage", "tiene una hemorragia en la pierna"],
+    ["vomiting blood", "estoy vomitando sangre"],
+    ["blood in stool", "hice popó con sangre"],
+    ["worst headache", "es el peor dolor de cabeza de mi vida"],
+    ["sudden headache", "me dio un dolor de cabeza muy fuerte de repente"],
+    ["throat swelling", "se me está hinchando la garganta después de comer maní"],
+    ["lips swelling", "tengo los labios hinchados y me pica todo"],
+    ["newborn fever", "mi bebé de 2 meses tiene fiebre"],
+    ["newborn fever weeks", "tengo un recién nacido con fiebre alta"],
+    ["self-harm", "quiero hacerme daño"],
+    ["suicidal", "estoy pensando en suicidarme"],
+    ["head hit hard", "me golpeé muy fuerte la cabeza y estoy mareado"],
+    ["run over", "a mi hermano lo atropelló un carro"],
+  ];
+
+  it.each(alarms)("flags %s", (_label, message) => {
+    expect(detectEmergency(message).isEmergency).toBe(true);
+  });
+
+  it("marks suicidal phrasing as self-harm", () => {
+    expect(detectEmergency("estoy pensando en suicidarme").isSelfHarm).toBe(true);
+  });
+
+  const safe: [string, string][] = [
+    ["back pain", "me duele la espalda al agacharme"],
+    ["cold and cough", "tengo gripe y mucha tos"],
+    ["mild headache", "tengo dolor de cabeza desde ayer"],
+    ["scraped knee", "me caí y me raspé la rodilla"],
+    ["toddler fever", "mi hijo de 4 años tiene fiebre"],
+    ["stomach ache", "me duele el estómago después de comer"],
+    ["skin rash", "tengo una alergia en la piel que pica"],
+    ["price question", "cuánto pago por una consulta de cardiología"],
+  ];
+
+  it.each(safe)("does NOT flag %s", (_label, message) => {
+    expect(detectEmergency(message).isEmergency).toBe(false);
   });
 });
