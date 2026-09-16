@@ -15,6 +15,7 @@ import {
   timestamp,
   vector,
 } from "drizzle-orm/pg-core";
+import type { CotizarConsultaSuccess } from "../domain/quote-types";
 
 /**
  * Insurance plans. PRD 7.3 `planes`.
@@ -135,12 +136,57 @@ export const fragmentos = pgTable(
 );
 
 /**
+ * Persisted quotes ("select an option" / "close the quote" feature, on top
+ * of PRD 7.3). Not in the original PRD schema — added so:
+ *  1. the patient's hospital selection survives across chat turns and page
+ *     reloads (server-side, never trusted from the client — see
+ *     POST /api/quote/select),
+ *  2. a follow-up question ("qué diferencia hay con el recomendado") can be
+ *     grounded against the SAME numbers the original quote used, even
+ *     though `cotizar_consulta` isn't called again that turn (see
+ *     lib/domain/quote-grounding.ts + lib/agent/run.ts), fixing the
+ *     cross-turn `validation_block` bug,
+ *  3. "close the quote" has a server-computed summary to recompute from
+ *     (lib/domain/quote-summary.ts), never from the model's text.
+ *
+ * One row per successful `cotizar_consulta` call (lib/agent/tools.ts) — the
+ * "active" quote for a poliza is simply its most recent row
+ * (lib/db/quotes.ts's `getActiveQuote`). `payload` is the exact
+ * `CotizarConsultaSuccess` the tool returned, so it's reusable both for
+ * grounding and for the closing summary without recomputing anything.
+ */
+export const cotizaciones = pgTable(
+  "cotizaciones",
+  {
+    id: text("id").primaryKey(), // uuid, generated in application code (lib/db/quotes.ts)
+    // Browser session (JWT `sid`). Quotes are scoped to it, never to the policy:
+    // demo policies are shared by every evaluator.
+    sesionId: text("sesion_id").notNull(),
+    poliza: text("poliza")
+      .notNull()
+      .references(() => asegurados.poliza),
+    especialidadId: text("especialidad_id")
+      .notNull()
+      .references(() => especialidades.id),
+    payload: jsonb("payload").notNull().$type<CotizarConsultaSuccess>(),
+    seleccion: text("seleccion"), // chosen hospital name, or NULL until POST /api/quote/select
+    estado: text("estado").notNull().default("abierta").$type<"abierta" | "cerrada">(),
+    creadoEn: timestamp("creado_en", { withTimezone: true }).defaultNow().notNull(),
+    actualizadoEn: timestamp("actualizado_en", { withTimezone: true }).defaultNow().notNull(),
+    cerradoEn: timestamp("cerrado_en", { withTimezone: true }),
+  },
+  (table) => [
+    check("cotizaciones_estado_check", sql`${table.estado} IN ('abierta', 'cerrada')`),
+  ],
+);
+
+/**
  * Interaction traces (no personal data). PRD 7.3 `trazas`.
  */
 export const trazas = pgTable("trazas", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   sesionId: text("sesion_id").notNull(),
-  evento: text("evento").notNull(), // tool_call | emergency_bypass | validation_block | error
+  evento: text("evento").notNull(), // tool_call | emergency_bypass | validation_block | error | quote_selected | quote_closed
   detalle: jsonb("detalle").notNull(),
   creadoEn: timestamp("creado_en", { withTimezone: true }).defaultNow(),
 });

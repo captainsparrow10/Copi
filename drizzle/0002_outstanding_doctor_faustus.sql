@@ -1,0 +1,1 @@
+ALTER TABLE "cotizaciones" ADD COLUMN "sesion_id" text NOT NULL;
