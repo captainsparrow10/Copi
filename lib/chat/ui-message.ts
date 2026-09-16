@@ -124,3 +124,8 @@ export function extractToolTrace(messages: UIMessage[]): ToolTraceEntry[] {
   }
   return entries;
 }
+
+/** Text to show in the message bubble: empty when the emergency banner already carries the fixed 911 text. */
+export function getVisibleMessageText(message: UIMessage): string {
+  return extractEmergencyData(message) ? "" : getMessageText(message);
+}

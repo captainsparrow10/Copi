@@ -5,6 +5,7 @@ import {
   extractLatestQuote,
   extractToolTrace,
   getMessageText,
+  getVisibleMessageText,
   toChatMessages,
 } from "@/lib/chat/ui-message";
 import type { CotizarConsultaOutput } from "@/lib/agent/tools";
@@ -137,5 +138,21 @@ describe("extractToolTrace (PRD P1-03 'Cómo llegué a esto')", () => {
   it("skips non-tool parts", () => {
     const messages = [fakeMessage("assistant", [{ type: "text", text: "hola" }])];
     expect(extractToolTrace(messages)).toEqual([]);
+  });
+});
+
+describe("getVisibleMessageText", () => {
+  it("hides the fixed emergency text when the emergency banner already shows it", () => {
+    // Browser finding: the 911 message appeared twice (banner + plain text).
+    const message = fakeMessage("assistant", [
+      { type: "data-emergency", data: { matchedPhrase: "Dolor o presión en el pecho", isSelfHarm: false } },
+      { type: "text", text: "Lo que describes puede ser una emergencia. Acude de inmediato…" },
+    ]);
+    expect(getVisibleMessageText(message)).toBe("");
+  });
+
+  it("shows the text of any other message", () => {
+    const message = fakeMessage("assistant", [{ type: "text", text: "Te conviene traumatología." }]);
+    expect(getVisibleMessageText(message)).toBe("Te conviene traumatología.");
   });
 });

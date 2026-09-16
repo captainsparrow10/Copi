@@ -26,7 +26,7 @@ import { Logo } from "@/components/brand/Logo";
 import { PatientList, type DemoPatient } from "@/components/workspace/PatientList";
 import { ProfilePanel } from "@/components/workspace/ProfilePanel";
 import { createChatTransport } from "@/lib/chat/transport";
-import { extractEmergencyData, extractLatestQuote, extractToolTrace, getMessageText } from "@/lib/chat/ui-message";
+import { extractEmergencyData, extractLatestQuote, extractToolTrace, getVisibleMessageText } from "@/lib/chat/ui-message";
 import { parseChatError, type ChatApiError } from "@/lib/chat/errors";
 import { MAX_MESSAGE_LENGTH } from "@/lib/chat/constants";
 import { DISCLAIMER } from "@/lib/copy";
@@ -446,7 +446,7 @@ function ChatMessageBubble({
   const isUser = message.role === "user";
   const emergency = !isUser ? extractEmergencyData(message) : null;
   const quote = !isUser ? extractLatestQuote([message]) : null;
-  const text = getMessageText(message);
+  const text = getVisibleMessageText(message);
   const showQuote = quote && quote.toolCallId !== hideQuoteToolCallId;
 
   return (
