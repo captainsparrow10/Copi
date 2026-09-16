@@ -25,9 +25,9 @@
     "planId": "premium",
     "fechaInicio": "2021-03-10",
     "deducibleUsado": "0.00",
-    "gastoAcumulado": "950.00",
+    "gastoAcumulado": "995.00",
     "activa": true,
-    "_caso": "cerca del tope anual de bolsillo (premium: tope 1000, gasto 950)"
+    "_caso": "cerca del tope anual de bolsillo (premium: tope 1000, gasto 995 -> quedan $5; el copago de cualquier consulta en red supera eso, asi que 'tope' siempre se marca — con 950 quedaban $50, mas que el bruto de cualquier consulta en red, y 'tope' nunca se disparaba, bug mark-tope-01)"
   },
   {
     "poliza": "POL-1004",

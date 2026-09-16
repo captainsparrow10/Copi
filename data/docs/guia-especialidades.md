@@ -18,8 +18,8 @@ el síntoma, no solo a su descripción clínica.
 ---
 
 ### [G-1] medicina_general
-Me siento mal en general. Tengo malestar general, fiebre baja o resfriado común.
-Estoy cansado sin causa clara.
+Tengo fiebre baja, congestión nasal leve o dolor de garganta desde hace uno o dos
+días. Quiero un chequeo por un resfriado común, sin otros síntomas de alarma.
 
 ### [G-2] medicina_general
 Me duele la cabeza. Dolor de cabeza leve u ocasional, sin señales de alarma.
@@ -50,8 +50,10 @@ Me falta el aire al subir escaleras o al hacer esfuerzo, de forma progresiva en
 los últimos días.
 
 ### [G-9] cardiologia
-Se me hinchan las piernas o los tobillos. Tengo la presión arterial alta.
-Quiero una evaluación cardíaca preventiva.
+Tengo la presión alta. Me preocupa mi presión arterial o una posible
+hipertensión, aunque no me hayan diagnosticado nada todavía. Se me hinchan
+las piernas o los tobillos. Quiero una evaluación cardíaca preventiva por la
+presión.
 
 ### [G-10] cardiologia
 Me mareo o me siento fatigado al hacer esfuerzo físico, sin perder el

@@ -242,6 +242,37 @@ describe("calcularCopago — reglas PRD 7.4", () => {
     expect(Number.isInteger(result.totalPaciente * 100)).toBe(true);
   });
 
+  /**
+   * Regression: mark-tope-01 (Phase 5 evals) — POL-1003's seed data
+   * (data/seeds/asegurados.json) is described as "near the annual
+   * out-of-pocket cap" but the old gastoAcumulado (950, tope 1000 -> $50
+   * remaining) was well above the bruto of even the cheapest in-network
+   * cardiologia option (tier B: $65 * 0.10 coaseguro + $5 copago = $11.50),
+   * so "tope" could never actually fire for that scenario. The seed now
+   * uses gastoAcumulado 995 ($5 remaining). This test pins the real seeded
+   * numbers (data/seeds/plan_tier_reglas.json premium tier B, data/seeds/
+   * tarifario.json HOSP-B1 cardiologia) so a future seed edit can't silently
+   * regress this again.
+   */
+  it("regla 8-9 (datos reales POL-1003): con gastoAcumulado=995 el tope SI se dispara para la consulta mas barata", () => {
+    const input = baseInput({
+      precio: 65, // HOSP-B1 cardiologia (data/seeds/tarifario.json)
+      plan: { deducibleAnual: 0, topeAnualBolsillo: 1000, carenciaEspecialidadDias: 0 }, // premium (planes.json)
+      tier: { coaseguro: 0.1, copagoFijo: 5 }, // premium tier B (plan_tier_reglas.json)
+      asegurado: {
+        activa: true,
+        fechaInicio: new Date("2021-03-10"),
+        deducibleUsado: 0,
+        gastoAcumulado: 995, // data/seeds/asegurados.json POL-1003, post-fix
+      },
+      especialidadId: "cardiologia",
+    });
+    const result = calcularCopago(input);
+    // bruto = 0 + 6.5 + 5 = 11.5; tope_restante = 1000 - 995 = 5
+    expect(result.marcas).toContain("tope");
+    expect(result.totalPaciente).toBe(5);
+  });
+
   it("regla 11: caso .xx5 redondea hacia arriba (half-up)", () => {
     const input = baseInput({
       precio: 100,
