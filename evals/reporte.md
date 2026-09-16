@@ -9,7 +9,7 @@
 - Aprobados: 37 / 40
 - Duración total de la corrida: 2m 0s
 
-> Entorno: Ollama LAN (192.168.0.220), un solo GPU compartido, casos corridos en serie. La meta de rapidez de la PRD ("p95 < 8s, nube") está pensada para el proveedor de producción (Gemini Flash-Lite en Vercel), no para este entorno local — se reporta igual para referencia.
+> Entorno: proveedor `deepseek`, casos corridos en serie contra la base configurada en DATABASE_URL. Los tiempos incluyen la red hasta el proveedor del modelo.
 
 ## Métricas (PRD sección 4)
 
