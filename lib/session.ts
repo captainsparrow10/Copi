@@ -12,6 +12,7 @@
  * the async Next 16 `cookies()` API and are meant to be called from route
  * handlers only.
  */
+import { randomUUID } from "node:crypto";
 import { jwtVerify, SignJWT } from "jose";
 import { cookies } from "next/headers";
 
@@ -22,6 +23,8 @@ export const SESSION_TTL_SECONDS = 2 * 60 * 60;
 
 export interface SessionPayload {
   poliza: string;
+  /** Random per-login id. Scopes quotes and traces to one browser session, since demo policies are shared. */
+  sid: string;
 }
 
 function getSecretKey(): Uint8Array {
@@ -32,9 +35,9 @@ function getSecretKey(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-/** Signs a session JWT (HS256) carrying only the policy number. */
-export async function createSessionToken(poliza: string): Promise<string> {
-  return new SignJWT({ poliza })
+/** Signs a session JWT (HS256) carrying the policy number and a fresh random session id. */
+export async function createSessionToken(poliza: string, sid: string = randomUUID()): Promise<string> {
+  return new SignJWT({ poliza, sid })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_TTL_SECONDS}s`)
@@ -52,7 +55,10 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
     if (typeof payload.poliza !== "string" || payload.poliza.length === 0) {
       return null;
     }
-    return { poliza: payload.poliza };
+    if (typeof payload.sid !== "string" || payload.sid.length === 0) {
+      return null;
+    }
+    return { poliza: payload.poliza, sid: payload.sid };
   } catch {
     return null;
   }
