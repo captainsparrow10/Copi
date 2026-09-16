@@ -87,3 +87,79 @@ describe("validateAmounts — PRD 7.8 layer 6", () => {
     expect(result.valid).toBe(true);
   });
 });
+
+/**
+ * Regression: rag-04 (Phase 5 evals) — POL-1003's plan tope is $1,000.00.
+ * When the model quoted it verbatim, the old regex read only "$1" (stopping
+ * at the comma), which didn't match any tool number and the whole answer
+ * got replaced by the safe fallback text.
+ */
+describe("validateAmounts — thousands separators (PRD 6.2 bug 3a)", () => {
+  const planToolResults = [
+    {
+      toolName: "buscar_en_poliza",
+      output: {
+        fragmentos: [
+          {
+            id: "C-21.4",
+            contenido:
+              "Glosario — tope anual de bolsillo\n¿Qué es el tope anual de bolsillo? El Plan Premium tiene un " +
+              "tope anual de bolsillo de **$1,000.00**, el más bajo de los tres planes.",
+          },
+        ],
+      },
+    },
+  ];
+
+  it("passes a $-prefixed comma-thousands amount that matches a tool amount", () => {
+    const text = "Tu tope anual de bolsillo es de $1,000.00 según tu póliza [C-21.4].";
+    const result = validateAmounts(text, planToolResults);
+    expect(result.valid).toBe(true);
+    expect(result.invalidAmounts).toEqual([]);
+  });
+
+  it("passes a bare dot-thousands amount (1.000 meaning one thousand)", () => {
+    const bareToolResults = [{ toolName: "obtener_resumen_plan", output: { tope_restante: 1000 } }];
+    const text = "Te quedan 1.000 en tu tope anual de bolsillo.";
+    expect(validateAmounts(text, bareToolResults).valid).toBe(true);
+  });
+
+  it("still fails a thousands-shaped amount that isn't grounded in any tool result", () => {
+    const text = "El tope de tu plan es de $9,999.00.";
+    const result = validateAmounts(text, planToolResults);
+    expect(result.valid).toBe(false);
+    expect(result.invalidAmounts).toContain("9,999.00");
+  });
+
+  it("grounds an amount embedded in prose (buscar_en_poliza's contenido field), not just bare numeric fields", () => {
+    // The $1,000.00 above lives inside a full sentence in `contenido`, not
+    // as its own numeric field — collectNumbers must extract it from the
+    // prose, not just accept whole-string-numeric values.
+    const text = "El tope de tu Plan Premium es $1,000.00.";
+    expect(validateAmounts(text, planToolResults).valid).toBe(true);
+  });
+});
+
+/**
+ * Regression: rag-04 also has policy clauses that inline their own or a
+ * sibling clause's id in prose (e.g. "clásulas C-10.1 a C-10.3"), and the
+ * response itself cites fragments as `[C-19.1]` / `[G-12]`. Neither must be
+ * misread as a dollar amount (19.1, 10.1, 12) by the bare-decimal branch.
+ */
+describe("validateAmounts — citation ids are never read as amounts (PRD 6.2 bug 3b)", () => {
+  const toolResults = [
+    { toolName: "buscar_en_poliza", output: { fragmentos: [{ id: "C-19.1", contenido: "Exclusiones generales." }] } },
+  ];
+
+  it("does not flag a [C-x.y] citation in the response text as a fabricated amount", () => {
+    const text = "Según la cláusula [C-19.1], eso no está cubierto.";
+    const result = validateAmounts(text, toolResults);
+    expect(result.valid).toBe(true);
+    expect(result.invalidAmounts).toEqual([]);
+  });
+
+  it("does not flag a [G-n] citation in the response text as a fabricated amount", () => {
+    const text = "Según [G-12], te conviene dermatología.";
+    expect(validateAmounts(text, []).valid).toBe(true);
+  });
+});
