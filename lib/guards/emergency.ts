@@ -18,20 +18,34 @@ interface AlarmCategory {
   patterns: RegExp[];
   /** The self-harm category gets an additional crisis-line addendum below. */
   selfHarm?: boolean;
+  /**
+   * Extra matcher evaluated independently of `patterns`/`phrase`. Used when a
+   * category needs a positive pattern gated by a negative condition (e.g. the
+   * allergic-swelling category below excluding dermatological mentions) —
+   * something a single regex alternation can't express cleanly.
+   */
+  extraMatch?: (normalizedMessage: string) => boolean;
 }
 
+// Spanish stem-changing verbs (e -> ie, o -> ue, etc.) don't share a prefix
+// between their infinitive/noun form and their conjugated forms — "apretar"
+// conjugates to "aprieta"/"aprietan" (stem "apriet-"), not "apreta". A plain
+// `apret\w*` prefix regex silently misses every conjugated form. Each
+// alternation below lists both the regular stem and the stem-changed one
+// instead of relying on a single prefix to cover all conjugations.
 const ALARM_CATEGORIES: AlarmCategory[] = [
   {
     phrase: "Dolor o presión en el pecho",
     patterns: [
-      /\b(dolor|duele\w*|presion|opresion|apret\w*|punzada)\b[^.?!]{0,30}\bpecho\b/,
-      /\bpecho\b[^.?!]{0,20}\b(duele|dolor|apret\w*|presion|opresion)\b/,
+      /\b(dolor|dol\w*|duele\w*|presion|opresion|apriet\w*|apret\w*|punzada)\b[^.?!]{0,30}\bpecho\b/,
+      /\bpecho\b[^.?!]{0,20}\b(duele\w*|dolor|dol\w*|apriet\w*|apret\w*|presion|opresion)\b/,
     ],
   },
   {
     phrase: "dificultad o falta de aire",
     patterns: [
-      /\b(falta\w*|dificultad|cuesta|no puedo|no puede)\b[^.?!]{0,20}\b(aire|respirar)\b/,
+      /\b(falta\w*|dificultad|cuesta|no puedo|no puede)\b[^.?!]{0,20}\b(aire|respir\w*)\b/,
+      /\bno respira\w*\b/,
       /\bahog(o|a|ando|andome|andose)\b/,
     ],
   },
@@ -77,13 +91,26 @@ const ALARM_CATEGORIES: AlarmCategory[] = [
     ],
   },
   {
+    // "cara" is split out of the main patterns below (via `extraMatch`)
+    // because it's ambiguous with dermatological mentions ("espinillas
+    // inflamadas en la cara" is acne, not an allergic reaction) — garganta/
+    // labios/lengua/parpados don't have that ambiguity and stay in the
+    // regular patterns so they're never suppressed by a dermatology mention.
     phrase: "reacción alérgica con hinchazón de cara o garganta",
     patterns: [
-      /\b(hinch\w*|inflam\w*)\b[^.?!]{0,25}\b(cara|garganta|labios|lengua|parpados)\b/,
-      /\b(cara|garganta|labios|lengua|parpados)\b[^.?!]{0,10}\b(hinch\w*|inflam\w*)\b/,
+      /\b(hinch\w*|inflam\w*)\b[^.?!]{0,25}\b(garganta|labios|lengua|parpados)\b/,
+      /\b(garganta|labios|lengua|parpados)\b[^.?!]{0,10}\b(hinch\w*|inflam\w*)\b/,
       /\bse me cierra la garganta\b/,
       /\banafila\w*/,
     ],
+    extraMatch: (msg) => {
+      const isAcneContext = /\b(acne|espinill\w*|granos?|barros?)\b/.test(msg);
+      if (isAcneContext) return false;
+      return (
+        /\b(hinch\w*|inflam\w*)\b[^.?!]{0,25}\bcara\b/.test(msg) ||
+        /\bcara\b[^.?!]{0,10}\b(hinch\w*|inflam\w*)\b/.test(msg)
+      );
+    },
   },
   {
     phrase: "fiebre alta en bebé menor de 3 meses",
@@ -144,9 +171,11 @@ export interface EmergencyDetection {
 /** Detects whether `message` describes any Anexo B alarm, verbatim or in patient phrasing. */
 export function detectEmergency(message: string): EmergencyDetection {
   const normalizedMessage = normalize(message);
-  for (const { phrase, patterns, selfHarm } of ALARM_CATEGORIES) {
+  for (const { phrase, patterns, selfHarm, extraMatch } of ALARM_CATEGORIES) {
     const matches =
-      normalizedMessage.includes(normalize(phrase)) || patterns.some((pattern) => pattern.test(normalizedMessage));
+      normalizedMessage.includes(normalize(phrase)) ||
+      patterns.some((pattern) => pattern.test(normalizedMessage)) ||
+      (extraMatch ? extraMatch(normalizedMessage) : false);
     if (matches) {
       return { isEmergency: true, matchedPhrase: phrase, isSelfHarm: selfHarm ?? false };
     }

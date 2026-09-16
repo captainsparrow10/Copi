@@ -155,6 +155,18 @@ describe("detectEmergency — patient phrasing", () => {
     expect(detectEmergency("estoy pensando en suicidarme").isSelfHarm).toBe(true);
   });
 
+  // Regression: "apretar" is an e->ie stem-changing verb — its conjugated
+  // forms ("aprieta", "aprietan") don't share the "apret-" prefix the old
+  // regex relied on, so they were silently missed (emerg-01, Phase 5 evals).
+  it.each([
+    ["chest tightness, stem-changed present tense", "siento que me aprieta el pecho y no se me quita"],
+    ["chest tightness, plural stem-changed", "el pecho se me aprietan los musculos alrededor"],
+    ["chest pain, infinitive of doler", "me tiene que doler el pecho desde ayer"],
+    ["can't breathe, present tense respira (no infinitive)", "mi bebe no respira bien"],
+  ])("flags %s", (_label, message) => {
+    expect(detectEmergency(message).isEmergency).toBe(true);
+  });
+
   const safe: [string, string][] = [
     ["back pain", "me duele la espalda al agacharme"],
     ["cold and cough", "tengo gripe y mucha tos"],
@@ -168,5 +180,36 @@ describe("detectEmergency — patient phrasing", () => {
 
   it.each(safe)("does NOT flag %s", (_label, message) => {
     expect(detectEmergency(message).isEmergency).toBe(false);
+  });
+});
+
+/**
+ * Regression: the allergic-reaction category's "hinchazón/inflamación de
+ * cara" pattern was matching dermatological mentions ("espinillas
+ * inflamadas en la cara" = acne) as a false-positive emergency (clear-11,
+ * Phase 5 evals). "cara" swelling must be suppressed only when the message
+ * is clearly about acne/skin blemishes — garganta/labios/lengua/parpados
+ * swelling must still fire regardless (real alarms, bias toward recall).
+ */
+describe("detectEmergency — acne vs. allergic facial swelling (false-positive fix)", () => {
+  const acneCases: [string, string][] = [
+    ["acne with inflamed pimples on face and back", "Tengo acne con espinillas inflamadas en la cara y la espalda"],
+    ["pimples on face", "Tengo la cara llena de granos inflamados"],
+    ["blackheads/pimples, no face mention needed", "me salen barros inflamados en la espalda"],
+  ];
+
+  it.each(acneCases)("does NOT flag %s", (_label, message) => {
+    expect(detectEmergency(message).isEmergency).toBe(false);
+  });
+
+  const realAlarms: [string, string][] = [
+    ["face swelling, no acne context", "se me hinchó toda la cara de repente"],
+    ["lips swelling", "tengo los labios hinchados y me pica todo"],
+    ["throat inflamed, can't swallow/breathe", "tengo la garganta inflamada y no puedo tragar ni respirar bien"],
+    ["eyelids swelling", "se me hincharon los parpados despues de comer mani"],
+  ];
+
+  it.each(realAlarms)("still flags %s", (_label, message) => {
+    expect(detectEmergency(message).isEmergency).toBe(true);
   });
 });
