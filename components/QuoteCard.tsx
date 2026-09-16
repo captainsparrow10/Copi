@@ -6,12 +6,14 @@
  * unit-test by hand and to drop into app/chat/page.tsx wherever
  * `extractLatestQuote` finds a result.
  */
-import { AlertTriangle, Award, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Award, BadgeCheck, ShieldAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import type { CotizarConsultaOutput, OpcionCotizacion } from "@/lib/agent/tools";
+import { computeEffectiveBreakdown } from "@/lib/domain/effective-breakdown";
 import { carenciaLabel, markLabel, type MarkTone } from "@/lib/format/marks";
 import { formatMoney } from "@/lib/format/money";
 
@@ -52,26 +54,54 @@ function BreakdownRow({ label, value, emphasis }: { label: string; value: string
   );
 }
 
-function OptionCard({ opcion, isRecommended }: { opcion: OpcionCotizacion; isRecommended: boolean }) {
+interface OptionCardProps {
+  opcion: OpcionCotizacion;
+  isRecommended: boolean;
+  isSelected: boolean;
+  /** Present (even as a no-op-until-clicked callback) only when the card is interactive — i.e. this is the session's active quote. */
+  onSelect?: (hospital: string) => void;
+  /** True while a select request for THIS hospital is in flight, to disable/label its button without blocking the rest of the card. */
+  selecting?: boolean;
+  /** Selection is closed for editing once the quote itself is closed (estado === "cerrada"). */
+  selectionLocked?: boolean;
+}
+
+function OptionCard({ opcion, isRecommended, isSelected, onSelect, selecting, selectionLocked }: OptionCardProps) {
   const outOfNetwork = opcion.marcas.includes("fuera_de_red");
+  // Display-only fix: a_deducible + coaseguro + copago_fijo (PRD 7.4's
+  // `bruto`) can exceed total_paciente once the precio/tope cap (step 9)
+  // fires — showing the raw components would misleadingly imply the patient
+  // paid more than they did (e.g. "Copago fijo $8.00" while the whole price
+  // went to the deductible and total_paciente = precio). These are what was
+  // actually charged; totals below are unchanged, straight from the tool.
+  const effective = computeEffectiveBreakdown(opcion);
+
   return (
     <div
       className={
         "rounded-lg border p-3 " +
-        (isRecommended
-          ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-          : "border-border")
+        (isSelected
+          ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-400/40 dark:bg-emerald-950/30"
+          : isRecommended
+            ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+            : "border-border")
       }
       aria-label={isRecommended ? `${opcion.hospital}, hospital recomendado` : opcion.hospital}
     >
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="flex items-center gap-1.5 font-medium">
+          <div className="flex flex-wrap items-center gap-1.5 font-medium">
             {opcion.hospital}
             {isRecommended && (
               <Badge className="gap-1">
                 <Award aria-hidden="true" />
                 Recomendado
+              </Badge>
+            )}
+            {isSelected && (
+              <Badge className="gap-1 border-emerald-600 bg-emerald-600 text-white">
+                <BadgeCheck aria-hidden="true" />
+                Elegido
               </Badge>
             )}
           </div>
@@ -89,7 +119,8 @@ function OptionCard({ opcion, isRecommended }: { opcion: OpcionCotizacion; isRec
       {outOfNetwork && (
         <p className="mt-1.5 flex items-center gap-1 text-xs text-destructive">
           <AlertTriangle className="size-3.5" aria-hidden="true" />
-          Fuera de la red: no puede ser el hospital recomendado.
+          Fuera de la red: tu plan no la cubre. Pagarías el 100 % de la consulta (
+          {formatMoney(opcion.total_paciente)}) de tu bolsillo.
         </p>
       )}
 
@@ -97,15 +128,31 @@ function OptionCard({ opcion, isRecommended }: { opcion: OpcionCotizacion; isRec
 
       <div className="grid grid-cols-2 gap-x-4 gap-y-1">
         <BreakdownRow label="Precio de la consulta" value={formatMoney(opcion.precio)} />
-        <BreakdownRow label="A deducible" value={formatMoney(opcion.a_deducible)} />
-        <BreakdownRow label="Coaseguro" value={formatMoney(opcion.coaseguro)} />
-        <BreakdownRow label="Copago fijo" value={formatMoney(opcion.copago_fijo)} />
+        <BreakdownRow label="A deducible" value={formatMoney(effective.aDeducible)} />
+        <BreakdownRow label="Coaseguro" value={formatMoney(effective.coaseguro)} />
+        <BreakdownRow label="Copago fijo" value={formatMoney(effective.copagoFijo)} />
       </div>
       <Separator className="my-2" />
       <div className="grid grid-cols-2 gap-x-4">
         <BreakdownRow label="Total tú" value={formatMoney(opcion.total_paciente)} emphasis />
         <BreakdownRow label="Total aseguradora" value={formatMoney(opcion.total_aseguradora)} emphasis />
       </div>
+
+      {onSelect && (
+        <>
+          <Separator className="my-2" />
+          <Button
+            type="button"
+            size="sm"
+            variant={isSelected ? "secondary" : "outline"}
+            className="w-full"
+            disabled={selecting || selectionLocked}
+            onClick={() => onSelect(opcion.hospital)}
+          >
+            {selecting ? "Eligiendo…" : isSelected ? "Elegida" : "Elegir esta opción"}
+          </Button>
+        </>
+      )}
     </div>
   );
 }
@@ -121,7 +168,19 @@ const ERROR_TITLES: Record<string, string> = {
   SIN_ESPECIALIDAD_CONFIRMADA: "Falta confirmar el síntoma",
 };
 
-export function QuoteCard({ quote }: { quote: CotizarConsultaOutput }) {
+export interface QuoteCardProps {
+  quote: CotizarConsultaOutput;
+  /** Hospital currently chosen for this quote, or `null`/`undefined` if none yet. `undefined` when this card isn't the session's interactive active quote (e.g. it's an older message). */
+  seleccion?: string | null;
+  /** Once "cerrada", selection can no longer be changed (see POST /api/quote/close). */
+  estado?: "abierta" | "cerrada";
+  /** Presence of this prop is what makes the card interactive (shows "Elegir" buttons) — omit it to render a read-only historical quote. */
+  onSelect?: (hospital: string) => void;
+  /** Hospital currently being selected (its button shows a loading label; all buttons disable). */
+  selectingHospital?: string | null;
+}
+
+export function QuoteCard({ quote, seleccion, estado, onSelect, selectingHospital }: QuoteCardProps) {
   if ("error" in quote) {
     return (
       <Alert variant="destructive">
@@ -137,7 +196,10 @@ export function QuoteCard({ quote }: { quote: CotizarConsultaOutput }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Cotización — {especialidadLabel(quote.especialidad)}</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          Cotización — {especialidadLabel(quote.especialidad)}
+          {estado === "cerrada" && <Badge variant="secondary">Cerrada</Badge>}
+        </CardTitle>
         <CardDescription>{quote.plan}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -162,6 +224,10 @@ export function QuoteCard({ quote }: { quote: CotizarConsultaOutput }) {
                 key={`${opcion.hospital}-${opcion.tier}`}
                 opcion={opcion}
                 isRecommended={quote.recomendado !== null && opcion.hospital === quote.recomendado}
+                isSelected={seleccion === opcion.hospital}
+                onSelect={onSelect}
+                selecting={selectingHospital === opcion.hospital}
+                selectionLocked={estado === "cerrada" || (!!selectingHospital && selectingHospital !== opcion.hospital)}
               />
             ))}
           </div>

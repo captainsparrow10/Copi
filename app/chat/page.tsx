@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { QuoteCard } from "@/components/QuoteCard";
+import { ClosingSummaryCard } from "@/components/ClosingSummaryCard";
 import { EmergencyBanner } from "@/components/chat/EmergencyBanner";
 import { TracePanel } from "@/components/TracePanel";
 import { createChatTransport } from "@/lib/chat/transport";
@@ -24,6 +25,8 @@ import { extractEmergencyData, extractLatestQuote, extractToolTrace, getMessageT
 import { parseChatError, type ChatApiError } from "@/lib/chat/errors";
 import { MAX_MESSAGE_LENGTH } from "@/lib/chat/constants";
 import { DISCLAIMER } from "@/lib/copy";
+import type { QuoteResponse } from "@/lib/db/quotes";
+import type { ClosingSummary } from "@/lib/domain/quote-summary";
 
 interface SessionInfo {
   nombre: string;
@@ -40,6 +43,17 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [transport] = useState(() => createChatTransport());
   const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  // "Select an option" / "Close the quote" (feature spec items 1 and 3): the
+  // active quote lives server-side (lib/db/quotes.ts), never trusted from
+  // chat message parts — GET /api/quote is the source of truth, including
+  // across a page reload (useChat's message list isn't persisted).
+  const [activeQuote, setActiveQuote] = useState<QuoteResponse | null>(null);
+  const [selectingHospital, setSelectingHospital] = useState<string | null>(null);
+  const [selectError, setSelectError] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [closingSummary, setClosingSummary] = useState<ClosingSummary | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
 
   const { messages, sendMessage, status, clearError } = useChat({
     transport,
@@ -88,8 +102,77 @@ export default function ChatPage() {
   }, [messages]);
 
   const isBusy = status === "submitted" || status === "streaming";
+
+  // Loads the session's active quote (lib/db/quotes.ts, via GET /api/quote):
+  // once the session is ready (covers a page reload — useChat's own message
+  // list isn't persisted), and again every time a turn finishes (`status`
+  // back to "ready"), since it may have called cotizar_consulta and
+  // created/replaced the active quote. Same inline fetch-chain style as the
+  // session-check effect above, to avoid a `set-state-in-effect` lint error
+  // from calling an extracted async helper directly in the effect body.
+  useEffect(() => {
+    if (sessionState !== "ready") return;
+    let cancelled = false;
+    fetch("/api/quote")
+      .then(async (res) => (res.ok ? ((await res.json()) as { quote: QuoteResponse | null }) : null))
+      .then((data) => {
+        if (!cancelled && data) setActiveQuote(data.quote);
+      })
+      .catch(() => {
+        // Best-effort: the chat itself still works without this panel.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionState, status]);
+
+  async function handleSelect(hospital: string): Promise<void> {
+    setSelectingHospital(hospital);
+    setSelectError(null);
+    try {
+      const res = await fetch("/api/quote/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hospital }),
+      });
+      const data = (await res.json()) as { quote?: QuoteResponse; error?: { message?: string } };
+      if (!res.ok || !data.quote) {
+        setSelectError(data.error?.message ?? "No se pudo elegir ese hospital. Intenta de nuevo.");
+        return;
+      }
+      setActiveQuote(data.quote);
+    } catch {
+      setSelectError("No se pudo elegir ese hospital. Intenta de nuevo.");
+    } finally {
+      setSelectingHospital(null);
+    }
+  }
+
+  async function handleClose(): Promise<void> {
+    setClosing(true);
+    setCloseError(null);
+    try {
+      const res = await fetch("/api/quote/close", { method: "POST" });
+      const data = (await res.json()) as { summary?: ClosingSummary; error?: { message?: string } };
+      if (!res.ok || !data.summary) {
+        setCloseError(data.error?.message ?? "No se pudo cerrar la cotización. Intenta de nuevo.");
+        return;
+      }
+      setClosingSummary(data.summary);
+      setActiveQuote((prev) => (prev ? { ...prev, estado: "cerrada" } : prev));
+    } catch {
+      setCloseError("No se pudo cerrar la cotización. Intenta de nuevo.");
+    } finally {
+      setClosing(false);
+    }
+  }
+
   const rateLimited = apiError?.code === "RATE_LIMITED";
   const llmDown = apiError?.code === "LLM_UNAVAILABLE";
+  // The interactive quote panel below renders the active quote once
+  // (DB-backed); this message's own inline quote card is hidden for that
+  // one toolCallId to avoid showing the exact same quote twice.
+  const latestQuoteToolCallId = extractLatestQuote(messages)?.toolCallId ?? null;
   const trimmedInput = input.trim();
   const canSend = trimmedInput.length > 0 && trimmedInput.length <= MAX_MESSAGE_LENGTH && !isBusy && !rateLimited;
 
@@ -142,7 +225,7 @@ export default function ChatPage() {
         )}
 
         {messages.map((message) => (
-          <ChatMessageBubble key={message.id} message={message} />
+          <ChatMessageBubble key={message.id} message={message} hideQuoteToolCallId={activeQuote ? latestQuoteToolCallId : null} />
         ))}
 
         {isBusy && (
@@ -151,6 +234,41 @@ export default function ChatPage() {
             <Skeleton className="h-4 w-1/2" />
           </div>
         )}
+
+        {activeQuote && (
+          <div className="flex w-full flex-col gap-2">
+            <QuoteCard
+              quote={activeQuote}
+              seleccion={activeQuote.seleccion}
+              estado={activeQuote.estado}
+              onSelect={(hospital) => void handleSelect(hospital)}
+              selectingHospital={selectingHospital}
+            />
+            {selectError && <p className="text-xs text-destructive">{selectError}</p>}
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!activeQuote.seleccion || closing}
+                onClick={() => void handleClose()}
+              >
+                {closing
+                  ? "Cerrando…"
+                  : activeQuote.estado === "cerrada"
+                    ? "Ver resumen de cierre"
+                    : "Cerrar cotización"}
+              </Button>
+              {!activeQuote.seleccion && (
+                <p className="text-xs text-muted-foreground">Elige un hospital para poder cerrar la cotización.</p>
+              )}
+            </div>
+            {closeError && <p className="text-xs text-destructive">{closeError}</p>}
+          </div>
+        )}
+
+        {closingSummary && <ClosingSummaryCard summary={closingSummary} />}
 
         <TracePanel entries={extractToolTrace(messages)} />
 
@@ -199,11 +317,19 @@ export default function ChatPage() {
   );
 }
 
-function ChatMessageBubble({ message }: { message: UIMessage }) {
+function ChatMessageBubble({
+  message,
+  hideQuoteToolCallId,
+}: {
+  message: UIMessage;
+  /** toolCallId to skip rendering inline — the interactive active-quote panel (app/chat/page.tsx) already shows it. */
+  hideQuoteToolCallId: string | null;
+}) {
   const isUser = message.role === "user";
   const emergency = !isUser ? extractEmergencyData(message) : null;
   const quote = !isUser ? extractLatestQuote([message]) : null;
   const text = getMessageText(message);
+  const showQuote = quote && quote.toolCallId !== hideQuoteToolCallId;
 
   return (
     <div className={"flex flex-col gap-2 " + (isUser ? "items-end" : "items-start")}>
@@ -220,7 +346,7 @@ function ChatMessageBubble({ message }: { message: UIMessage }) {
         </div>
       )}
 
-      {quote && (
+      {showQuote && quote && (
         <div className="w-full">
           <QuoteCard quote={quote.output} />
         </div>
