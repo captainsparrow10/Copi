@@ -1,16 +1,23 @@
 /**
- * Left panel: demo patients. Presentational — the chat page owns the session
- * switch (POST /api/session) and passes the active policy down.
+ * Left panel: demo patients, each with a one-line highlight of their situation.
+ * Presentational — the chat page owns the session switch (POST /api/session).
  */
-import { UserRound } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { HighlightTone } from "@/lib/domain/profile";
 
 export interface DemoPatient {
   poliza: string;
   nombre: string;
   plan: string;
+  destacado: { texto: string; tono: HighlightTone };
 }
+
+const TONE_DOT: Record<HighlightTone, string> = {
+  ok: "bg-brand",
+  warning: "bg-warning",
+  danger: "bg-destructive",
+  neutral: "bg-muted-foreground/50",
+};
 
 interface PatientListProps {
   patients: DemoPatient[] | null;
@@ -21,22 +28,21 @@ interface PatientListProps {
 
 export function PatientList({ patients, activePoliza, switchingPoliza, onSelect }: PatientListProps) {
   return (
-    <nav aria-label="Pacientes de prueba" className="flex flex-col gap-3">
-      <div>
-        <p className="text-sm font-semibold">Pacientes</p>
-        <p className="text-xs text-muted-foreground">Cada uno tiene un plan y una situación distinta.</p>
-      </div>
+    <nav aria-label="Pacientes de prueba" className="flex flex-col gap-2.5">
+      <p className="px-3.5 text-sm leading-relaxed text-muted-foreground">
+        Pacientes de prueba. Cada uno tiene un plan distinto.
+      </p>
 
       {!patients && (
-        <div className="flex flex-col gap-2" aria-busy="true">
+        <div className="flex flex-col gap-1" aria-busy="true">
           {Array.from({ length: 5 }, (_, i) => (
-            <Skeleton key={i} className="h-14 w-full" />
+            <Skeleton key={i} className="h-16 w-full rounded-xl" />
           ))}
         </div>
       )}
 
       {patients && (
-        <ul className="flex flex-col gap-1.5">
+        <ul className="flex flex-col gap-0.5">
           {patients.map((patient) => {
             const isActive = patient.poliza === activePoliza;
             const isSwitching = patient.poliza === switchingPoliza;
@@ -48,22 +54,21 @@ export function PatientList({ patients, activePoliza, switchingPoliza, onSelect 
                   disabled={switchingPoliza !== null}
                   onClick={() => onSelect(patient.poliza)}
                   className={
-                    "flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors " +
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 " +
-                    (isActive ? "border-primary bg-primary/5" : "border-border hover:bg-muted")
+                    "flex min-h-16 w-full flex-col gap-1 rounded-xl px-3.5 py-3 text-left transition-colors " +
+                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-wait " +
+                    (isActive ? "bg-card shadow-soft" : "hover:bg-card/60")
                   }
                 >
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <UserRound className="size-4 text-muted-foreground" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{patient.nombre}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {patient.poliza} · {patient.plan}
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className={"text-sm " + (isActive ? "font-semibold" : "font-medium")}>{patient.nombre}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {isSwitching ? "Abriendo…" : patient.plan.replace(/^Plan /, "")}
                     </span>
                   </span>
-                  {isSwitching && <span className="text-xs text-muted-foreground">Cargando…</span>}
-                  {isActive && !isSwitching && <Badge variant="secondary">Activo</Badge>}
+                  <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
+                    <span className={"size-1.5 shrink-0 rounded-full " + TONE_DOT[patient.destacado.tono]} />
+                    {patient.destacado.texto}
+                  </span>
                 </button>
               </li>
             );

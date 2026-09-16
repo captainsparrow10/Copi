@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
-import { AlertTriangle, RotateCcw, Send } from "lucide-react";
+import { AlertTriangle, ArrowRight, RotateCcw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,6 +20,7 @@ import { QuoteCard } from "@/components/QuoteCard";
 import { ClosingSummaryCard } from "@/components/ClosingSummaryCard";
 import { EmergencyBanner } from "@/components/chat/EmergencyBanner";
 import { TracePanel } from "@/components/TracePanel";
+import { Logo } from "@/components/brand/Logo";
 import { PatientList, type DemoPatient } from "@/components/workspace/PatientList";
 import { ProfilePanel } from "@/components/workspace/ProfilePanel";
 import { createChatTransport } from "@/lib/chat/transport";
@@ -27,6 +28,7 @@ import { extractEmergencyData, extractLatestQuote, extractToolTrace, getMessageT
 import { parseChatError, type ChatApiError } from "@/lib/chat/errors";
 import { MAX_MESSAGE_LENGTH } from "@/lib/chat/constants";
 import { DISCLAIMER } from "@/lib/copy";
+import { formatMoney } from "@/lib/format/money";
 import type { QuoteResponse } from "@/lib/db/quotes";
 import type { ClosingSummary } from "@/lib/domain/quote-summary";
 import type { PatientProfile } from "@/lib/domain/profile";
@@ -230,11 +232,11 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="mx-auto grid min-h-dvh w-full max-w-[1400px] grid-cols-1 gap-4 px-4 py-4 lg:h-dvh lg:grid-cols-[260px_minmax(0,1fr)_320px] lg:gap-6 lg:py-6">
+    <div className="mx-auto grid min-h-dvh w-full max-w-[1440px] grid-cols-1 gap-4 px-4 py-4 lg:h-dvh lg:grid-cols-[264px_minmax(0,1fr)_340px] lg:gap-5 lg:py-3.5">
       <div className="lg:overflow-y-auto">
-        <div className="mb-4">
-          <p className="text-lg font-semibold">Copi</p>
-          <p className="text-xs text-muted-foreground">Tu copago antes de atenderte.</p>
+        <div className="mb-7 flex flex-col gap-1.5 px-3.5 pt-3.5">
+          <Logo size={30} />
+          <p className="text-[13px] text-muted-foreground">Tu copago, antes de atenderte</p>
         </div>
         <PatientList
           patients={patients}
@@ -245,18 +247,18 @@ export default function ChatPage() {
         {switchError && <p className="mt-2 text-xs text-destructive">{switchError}</p>}
       </div>
 
-      <main className="flex min-h-[70dvh] flex-col rounded-xl border border-border lg:min-h-0">
-        <header className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+      <main className="flex min-h-[70dvh] flex-col overflow-hidden rounded-[20px] bg-card shadow-soft lg:min-h-0">
+        <header className="flex items-center justify-between gap-3 border-b border-border/70 px-7 py-4">
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{profile ? profile.nombre : "Chat"}</p>
-            <p className="text-xs text-muted-foreground">
-              {profile ? `${profile.poliza} · ${profile.plan.nombre}` : "Sin paciente seleccionado"}
+            <p className="truncate text-[15px] font-semibold">{profile ? profile.nombre : "Nueva conversación"}</p>
+            <p className="text-[13px] text-muted-foreground">
+              {profile ? `${profile.poliza} · ${profile.plan.nombre}` : "Elige un paciente para empezar"}
             </p>
           </div>
           <Button
-            variant={quoteClosed ? "default" : "ghost"}
-            size="sm"
-            className="gap-1.5"
+            variant={quoteClosed ? "default" : "outline"}
+            size="lg"
+            className="gap-1.5 rounded-xl"
             disabled={!hasSession || switchingPoliza !== null || (messages.length === 0 && !activeQuote)}
             onClick={handleNewConsultation}
           >
@@ -265,7 +267,7 @@ export default function ChatPage() {
           </Button>
         </header>
 
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-7 py-6">
           {sessionState === "checking" && (
             <div className="flex flex-col gap-2" aria-busy="true">
               <Skeleton className="h-4 w-2/3" />
@@ -274,14 +276,17 @@ export default function ChatPage() {
           )}
 
           {sessionState === "none" && (
-            <p className="mt-8 text-center text-sm text-muted-foreground">
-              Elige un paciente de la lista para empezar. Cada uno tiene un plan distinto, así puedes comparar resultados.
-            </p>
+            <div className="mx-auto my-auto flex max-w-[520px] flex-col gap-3 py-8">
+              <p className="text-3xl leading-tight font-semibold tracking-tight">Antes de ir al médico, sabe cuánto vas a pagar.</p>
+              <p className="text-base leading-relaxed text-muted-foreground">
+                Elige un paciente de prueba a la izquierda. Cada uno tiene un plan distinto, así puedes comparar resultados.
+              </p>
+            </div>
           )}
 
           {hasSession && messages.length === 0 && (
-            <p className="mt-8 text-center text-sm text-muted-foreground">
-              Cuéntame qué síntoma tienes y te ayudo a saber qué especialidad te conviene y cuánto vas a pagar.
+            <p className="mx-auto my-auto max-w-[460px] text-center text-[15px] leading-relaxed text-muted-foreground">
+              Cuéntame qué síntoma tienes y te digo qué especialista te conviene y cuánto vas a pagar con tu plan.
             </p>
           )}
 
@@ -307,20 +312,34 @@ export default function ChatPage() {
               />
               {selectError && <p className="text-xs text-destructive">{selectError}</p>}
 
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant={activeQuote.seleccion && !quoteClosed ? "default" : "outline"}
-                  size="sm"
-                  disabled={!activeQuote.seleccion || closing}
-                  onClick={() => void handleClose()}
-                >
-                  {closing ? "Cerrando…" : quoteClosed ? "Ver resumen de cierre" : "Cerrar cotización"}
+              {!quoteClosed && (
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-card py-2.5 pr-2.5 pl-4.5 shadow-soft">
+                  {activeQuote.seleccion ? (
+                    <span className="min-w-0 truncate text-sm">
+                      {activeQuote.seleccion} ·{" "}
+                      <span className="font-semibold tabular-nums">
+                        {formatMoney(activeQuote.opciones.find((o) => o.hospital === activeQuote.seleccion)?.total_paciente ?? 0)}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Elige un hospital para cerrar tu cotización.</span>
+                  )}
+                  <Button
+                    type="button"
+                    size="lg"
+                    className="h-10 rounded-xl px-4"
+                    disabled={!activeQuote.seleccion || closing}
+                    onClick={() => void handleClose()}
+                  >
+                    {closing ? "Cerrando…" : "Cerrar cotización"}
+                  </Button>
+                </div>
+              )}
+              {quoteClosed && !closingSummary && (
+                <Button type="button" variant="outline" size="lg" className="self-start rounded-xl" onClick={() => void handleClose()}>
+                  Ver resumen de cierre
                 </Button>
-                {!activeQuote.seleccion && (
-                  <p className="text-xs text-muted-foreground">Elige un hospital para poder cerrar la cotización.</p>
-                )}
-              </div>
+              )}
               {closeError && <p className="text-xs text-destructive">{closeError}</p>}
             </div>
           )}
@@ -328,10 +347,13 @@ export default function ChatPage() {
           {closingSummary && (
             <div className="flex flex-col gap-2">
               <ClosingSummaryCard summary={closingSummary} />
-              <Button type="button" className="gap-1.5 self-start" onClick={handleNewConsultation}>
-                <RotateCcw className="size-4" aria-hidden="true" />
-                Empezar una nueva consulta
-              </Button>
+              <div className="flex items-center justify-between gap-3 rounded-2xl bg-card py-2.5 pr-2.5 pl-4.5 shadow-soft">
+                <span className="text-sm text-muted-foreground">¿Otra duda o síntoma?</span>
+                <Button type="button" size="lg" className="h-10 gap-1.5 rounded-xl px-4" onClick={handleNewConsultation}>
+                  <RotateCcw className="size-4" aria-hidden="true" />
+                  Empezar una nueva consulta
+                </Button>
+              </div>
             </div>
           )}
 
@@ -340,7 +362,7 @@ export default function ChatPage() {
           <div ref={bottomRef} />
         </div>
 
-        <div className="border-t border-border px-4 py-3">
+        <div className="px-7 pt-3.5 pb-4">
           {apiError && !rateLimited && (
             <Alert variant="destructive" className="mb-3">
               <AlertTriangle />
@@ -357,7 +379,10 @@ export default function ChatPage() {
             </Alert>
           )}
 
-          <form onSubmit={handleSubmit} className="flex items-end gap-2">
+          <form
+            onSubmit={handleSubmit}
+            className="flex items-end gap-2 rounded-2xl bg-card py-1.5 pr-1.5 pl-4 ring-1 ring-border focus-within:ring-2 focus-within:ring-ring"
+          >
             <Textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
@@ -367,22 +392,22 @@ export default function ChatPage() {
                   handleSubmit(event);
                 }
               }}
-              placeholder={hasSession ? "Describe tu síntoma..." : "Primero elige un paciente"}
+              placeholder={hasSession ? "Escribe tu síntoma o una pregunta…" : "Primero elige un paciente"}
               maxLength={MAX_MESSAGE_LENGTH}
               disabled={!hasSession || isBusy || rateLimited}
               aria-label="Mensaje para Copi"
-              className="min-h-10"
+              className="min-h-10 resize-none border-0 bg-transparent px-0 py-2 text-[15px] shadow-none focus-visible:ring-0 dark:bg-transparent"
             />
-            <Button type="submit" size="icon" disabled={!canSend} aria-label="Enviar mensaje">
-              <Send className="size-4" />
+            <Button type="submit" size="icon" disabled={!canSend} aria-label="Enviar mensaje" className="size-10 rounded-xl">
+              <ArrowRight className="size-4" />
             </Button>
           </form>
 
-          <p className="pt-2 text-center text-xs text-muted-foreground">{DISCLAIMER}</p>
+          <p className="pt-2.5 text-center text-xs text-muted-foreground">{DISCLAIMER}</p>
         </div>
       </main>
 
-      <div className="lg:overflow-y-auto">
+      <div className="lg:overflow-y-auto lg:py-3.5 lg:pr-4 lg:pl-1">
         <ProfilePanel profile={profile} loading={sessionState === "checking"} />
       </div>
     </div>
@@ -410,11 +435,19 @@ function ChatMessageBubble({
       {text.length > 0 && (
         <div
           className={
-            "max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap " +
-            (isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")
+            isUser
+              ? "max-w-[68%] rounded-[18px] rounded-br-md bg-secondary px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap"
+              : "flex max-w-[78%] flex-col gap-1.5"
           }
         >
-          {text}
+          {isUser ? (
+            text
+          ) : (
+            <>
+              <span className="text-xs font-medium text-muted-foreground">Copi</span>
+              <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{text}</p>
+            </>
+          )}
         </div>
       )}
 
