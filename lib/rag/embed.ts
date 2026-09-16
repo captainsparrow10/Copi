@@ -2,14 +2,16 @@
  * Embedding provider switch (PRD 7.2 / guia-construccion Parte 2 rule 6).
  *
  * This is the only file that knows how to talk to an embedding provider.
- * `EMBED_PROVIDER` (defaults to `LLM_PROVIDER`): `ollama` calls Ollama's `/api/embed`; `google`
- * uses `@ai-sdk/google`'s embedding model through the `ai` package. Both
+ * `EMBED_PROVIDER` (defaults to `LLM_PROVIDER`): `local` runs the model inside
+ * this process with Transformers.js (no external service); `ollama` calls
+ * Ollama's `/api/embed`; `google` uses `@ai-sdk/google`'s embedding model. All
  * branches must return vectors of `EMBED_DIM` dimensions (768) so the
  * `fragmentos.embedding` column and pgvector index never need to change.
  */
 import { config } from "dotenv";
 import { embed } from "ai";
 import { google } from "@ai-sdk/google";
+import type { FeatureExtractionPipeline } from "@huggingface/transformers";
 
 // Next.js auto-loads .env.local at runtime; scripts run via tsx do not, so
 // load it explicitly here (same pattern as lib/db/client.ts).
@@ -60,6 +62,34 @@ async function embedOllama(text: string, task: EmbedTask): Promise<number[]> {
 }
 
 /**
+ * Local branch: runs EMBED_MODEL (nomic-ai/nomic-embed-text-v1.5, the same model
+ * Ollama serves as nomic-embed-text) in-process with Transformers.js on CPU. The
+ * model (~140 MB, q8) is downloaded on first use and cached in EMBED_CACHE_DIR;
+ * serverless hosts only allow writes under /tmp. The pipeline is created once
+ * per process and reused.
+ */
+let localPipeline: Promise<FeatureExtractionPipeline> | null = null;
+
+function getLocalPipeline(): Promise<FeatureExtractionPipeline> {
+  if (!EMBED_MODEL) throw new Error("EMBED_MODEL is not set. Define it in .env.local.");
+  localPipeline ??= (async () => {
+    const { pipeline, env } = await import("@huggingface/transformers");
+    env.cacheDir = process.env.EMBED_CACHE_DIR ?? "/tmp/transformers-cache";
+    return pipeline("feature-extraction", EMBED_MODEL, { dtype: "q8" });
+  })().catch((error: unknown) => {
+    localPipeline = null; // let the next call retry instead of caching the failure
+    throw error;
+  });
+  return localPipeline;
+}
+
+async function embedLocal(text: string, task: EmbedTask): Promise<number[]> {
+  const extractor = await getLocalPipeline();
+  const output = await extractor(`${nomicPrefix(task)}${text}`, { pooling: "mean", normalize: true });
+  return Array.from(output.data as Float32Array);
+}
+
+/**
  * Google branch: implemented against the currently installed `@ai-sdk/google`
  * (EmbeddingModelV4, `google.textEmbeddingModel`) so it's ready to switch to
  * for production, but it is NOT exercised in this environment — there is no
@@ -85,7 +115,12 @@ async function embedGoogle(text: string, task: EmbedTask): Promise<number[]> {
 
 /** Embeds `text` for the configured provider, validating the resulting dimension. */
 export async function embedText(text: string, task: EmbedTask): Promise<number[]> {
-  const vector = EMBED_PROVIDER === "google" ? await embedGoogle(text, task) : await embedOllama(text, task);
+  const vector =
+    EMBED_PROVIDER === "local"
+      ? await embedLocal(text, task)
+      : EMBED_PROVIDER === "google"
+        ? await embedGoogle(text, task)
+        : await embedOllama(text, task);
   if (vector.length !== EMBED_DIM) {
     throw new Error(
       `Embedding dimension mismatch: provider returned ${vector.length}, expected EMBED_DIM=${EMBED_DIM}.`,
