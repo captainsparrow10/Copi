@@ -43,3 +43,18 @@ next-env.d.ts
 
 # challenge brief (local only)
 /hackIAthon-retos-filtro.pdf
+
+# InsForge & AI agent skills
+.insforge
+.agent
+.agents
+.augment
+.claude
+.cline
+.github/copilot*
+.kilocode
+.qoder
+.qwen
+.roo
+.trae
+.windsurf
