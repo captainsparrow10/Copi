@@ -217,7 +217,32 @@ export async function runChat({ ip, messages }: { ip: string; messages: ChatMess
   if (!session) {
     return { kind: "error", status: 401, code: "NO_SESSION", message: "No hay una sesión activa. Selecciona tu póliza para continuar." };
   }
-  const { poliza } = session;
+  return runChatForPoliza({ poliza: session.poliza, ip, messages });
+}
+
+/**
+ * Steps 2-7 of the PRD 7.7 pipeline, factored out of `runChat` so callers
+ * that already have a resolved `poliza` can drive the exact same rate
+ * limit / input validation / emergency filter / streamText / grounding /
+ * tracing pipeline without going through `lib/session.ts`'s `getSession()`
+ * (which reads the `copi_session` cookie via `next/headers` and only works
+ * inside a Next.js request context).
+ *
+ * `runChat` (the `/api/chat` route's entry point) is the only production
+ * caller and behaves exactly as before this split — it just resolves
+ * `poliza` from the cookie first. `evals/run.ts` is the other caller: it
+ * knows each case's `poliza` from `evals/casos.jsonl` and calls this
+ * directly, exercising the real pipeline instead of reimplementing it.
+ */
+export async function runChatForPoliza({
+  poliza,
+  ip,
+  messages,
+}: {
+  poliza: string;
+  ip: string;
+  messages: ChatMessage[];
+}): Promise<RunChatResult> {
   const sesionId = poliza;
 
   // 2. Rate limit.
