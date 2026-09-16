@@ -86,6 +86,10 @@ psoriasis.
 Me duele el abdomen o el estómago seguido. Tengo acidez o reflujo frecuente
 después de comer.
 
+### [G-33] gastroenterologia
+Me da acidez y reflujo casi todos los días. Siento ardor que me sube a la
+garganta después de comer.
+
 ### [G-17] gastroenterologia
 Tengo diarrea o estreñimiento desde hace más de una semana.
 
@@ -148,6 +152,10 @@ control prenatal.
 ### [G-31] pediatria
 Mi hijo o hija tiene fiebre, tos, vómito o diarrea (fuera de las señales de
 alarma del Anexo B, que siempre van a emergencias).
+
+### [G-34] pediatria
+Mi niña o mi niño está enfermo: mi hija o mi hijo tiene tos, diarrea o vómito
+desde ayer y no parece nada grave.
 
 ### [G-32] pediatria
 Quiero un control de crecimiento y desarrollo infantil o revisar el esquema de
