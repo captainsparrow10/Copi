@@ -55,7 +55,7 @@ export class PolizaInactivaError extends Error {
   readonly code = "POLIZA_INACTIVA" as const;
 
   constructor() {
-    super("La poliza esta inactiva y no puede cotizar.");
+    super("La póliza está inactiva y no puede cotizar.");
     this.name = "PolizaInactivaError";
   }
 }

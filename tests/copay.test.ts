@@ -47,6 +47,8 @@ describe("calcularCopago — reglas PRD 7.4", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(PolizaInactivaError);
       expect((err as PolizaInactivaError).code).toBe("POLIZA_INACTIVA");
+      // Shown to the patient in the quote card: must be proper Spanish.
+      expect((err as PolizaInactivaError).message).toBe("La póliza está inactiva y no puede cotizar.");
     }
   });
 
