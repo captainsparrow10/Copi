@@ -11,13 +11,9 @@
  * a ready-to-return `Response` (streamText's own UI-message-stream Response
  * for a normal turn, or a single-shot one for the emergency fixed text).
  *
- * DEVIATION FROM PRD 7.10: the PRD asks for a random `sesion_id` in
- * `trazas`, decorrelated from the insured's identity. The Phase 3 spec
- * fixes the session JWT payload to exactly `{ poliza }` with no separate
- * session-id mechanism, so this implementation uses `poliza` directly as
- * both the rate-limit key and `trazas.sesion_id`. Acceptable here because
- * every asegurado in this system is fictitious demo data (PRD 7.10), but
- * flagged as a real deviation for a production deployment with real PII.
+ * Sessions (PRD 7.10): the JWT carries a random `sid` per login, used as the
+ * rate-limit key, `trazas.sesion_id` and the scope of persisted quotes, so
+ * traces stay decorrelated from the policy number.
  */
 import { eq } from "drizzle-orm";
 import {
@@ -36,7 +32,8 @@ import { db } from "../db/client";
 import { asegurados, planes } from "../db/schema";
 import { logTrace } from "../db/trace";
 import { getActiveQuote, type QuoteRow } from "../db/quotes";
-import { buildGroundedToolResults, formatQuoteContextBlock } from "../domain/quote-grounding";
+import { buildGroundedToolResults, formatQuoteContextBlock, isFollowUpToStoredQuote } from "../domain/quote-grounding";
+import { buscarEnGuiaEspecialidades } from "../rag/search";
 import { decideStepTools } from "./step-policy";
 import { getSession } from "../session";
 import { checkRateLimit } from "../guards/rate-limit";
@@ -316,7 +313,13 @@ export async function runChatForPoliza({
     // into both the system prompt and the grounding set fixes that without
     // trusting anything the client sends (see lib/domain/quote-grounding.ts).
     const activeQuote: QuoteRow | null = await getActiveQuote(sesionId);
-    const storedQuoteContext = activeQuote
+    // A message that points to another specialty is a new quote flow, even if
+    // the model later skips every tool: never show or ground the old prices.
+    const messageSpecialty = activeQuote
+      ? ((await buscarEnGuiaEspecialidades(lastMessage.content))[0]?.especialidadId ?? null)
+      : null;
+    const storedQuoteContext =
+      activeQuote && isFollowUpToStoredQuote(messageSpecialty, activeQuote.especialidadId)
       ? {
           especialidadId: activeQuote.especialidadId,
           seleccion: activeQuote.seleccion,

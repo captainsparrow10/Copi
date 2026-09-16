@@ -146,3 +146,13 @@ export function formatQuoteContextBlock(stored: StoredQuoteContext | null): stri
 
   return lines.join("\n");
 }
+
+/**
+ * Whether the patient's new message is still about the stored quote. The
+ * caller runs the specialty guide search on the message BEFORE the LLM, so
+ * this doesn't depend on the model calling any tool: a message that clearly
+ * points to another specialty must never see or be grounded by the old prices.
+ */
+export function isFollowUpToStoredQuote(messageSpecialty: string | null, storedSpecialty: string): boolean {
+  return messageSpecialty === null || messageSpecialty === storedSpecialty;
+}

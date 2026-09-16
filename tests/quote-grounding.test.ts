@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildGroundedToolResults, formatQuoteContextBlock, type StoredQuoteContext } from "@/lib/domain/quote-grounding";
+import {
+  buildGroundedToolResults,
+  formatQuoteContextBlock,
+  isFollowUpToStoredQuote,
+  type StoredQuoteContext,
+} from "@/lib/domain/quote-grounding";
 import { validateAmounts } from "@/lib/guards/amount-validator";
 import type { CotizarConsultaSuccess } from "@/lib/domain/quote-types";
 
@@ -202,5 +207,20 @@ describe("formatQuoteContextBlock — differences", () => {
   it("describes the fixed copay actually charged, not the raw one swallowed by the deductible", () => {
     const block = formatQuoteContextBlock(storedContext) ?? "";
     expect(block).not.toMatch(/copago fijo \$8\.00/);
+  });
+});
+
+describe("isFollowUpToStoredQuote", () => {
+  it("treats a message with no specialty match as a follow-up about the stored quote", () => {
+    expect(isFollowUpToStoredQuote(null, "traumatologia")).toBe(true);
+  });
+
+  it("treats a message about the same specialty as a follow-up", () => {
+    expect(isFollowUpToStoredQuote("traumatologia", "traumatologia")).toBe(true);
+  });
+
+  it("rejects the stored quote when the new message points to another specialty", () => {
+    // Review finding: a zero-tool-call answer to a new symptom was grounded against the old specialty's prices.
+    expect(isFollowUpToStoredQuote("gastroenterologia", "traumatologia")).toBe(false);
   });
 });
