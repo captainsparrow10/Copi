@@ -75,7 +75,7 @@ flowchart LR
 | Filtro de emergencias | Cotizar ante una señal de alarma | `lib/guards/emergency.ts` |
 | Montos por código | Precios inventados | `lib/domain/copay.ts` |
 | Póliza fuera del modelo | Que el modelo consulte otra póliza | La póliza viene de la sesión firmada, ninguna herramienta la recibe |
-| Umbral de "no sé" | Adivinar la especialidad con síntomas vagos | `RAG_MIN_SCORE` en `lib/rag/search.ts` |
+| Umbral de "no sé" | Adivinar la especialidad con síntomas vagos o responder con cláusulas no relacionadas | `RAG_MIN_SCORE` y `RAG_POLICY_MIN_SCORE` en `lib/rag/search.ts` |
 | Orden de herramientas | Cotizar sin haber buscado la especialidad | `lib/agent/step-policy.ts` |
 | Validador de montos | Montos no respaldados, incluso en preguntas de seguimiento | `lib/guards/amount-validator.ts`, `lib/domain/quote-grounding.ts` |
 | Validador de citas | Citas `[G-n]` / `[C-x.y]` inexistentes | `lib/guards/citation-validator.ts` |
@@ -96,7 +96,7 @@ flowchart LR
 | Base de datos | PostgreSQL + pgvector, con Drizzle ORM |
 | Sesión | Cookie firmada con `jose` (JWT HS256) |
 | Hosting | InsForge: Sites para la app y Database para Postgres |
-| Tests | Vitest (264 tests) y evaluaciones conversacionales propias |
+| Tests | Vitest (267 tests) y evaluaciones conversacionales propias |
 
 ---
 
@@ -124,6 +124,7 @@ npm run dev                  # http://localhost:3000
 | `LLM_PROVIDER`, `CHAT_MODEL`, `DEEPSEEK_API_KEY` | Modelo de chat (`deepseek` / `deepseek-flash`) |
 | `EMBED_PROVIDER`, `EMBED_MODEL`, `EMBED_DIM`, `EMBED_CACHE_DIR` | Embeddings locales (`local` / nomic v1.5 / 768 / `/tmp/transformers-cache`) |
 | `RAG_MIN_SCORE` | Similitud mínima para aceptar una especialidad (`0.67` con nomic) |
+| `RAG_POLICY_MIN_SCORE` | Similitud mínima para aceptar una cláusula de póliza (`0.68` con nomic) |
 | `MAX_MESSAGES_PER_SESSION` | Límite de mensajes por sesión |
 | `DB_POOL_MAX` | Conexiones por instancia (usa `3` en hosting serverless) |
 | `CUSTOMER_SERVICE_*` | Contacto de servicio al cliente (opcional, hay valores de demo) |
@@ -176,22 +177,25 @@ Decisiones de despliegue que conviene conocer:
 
 `npm run eval` corre 40 conversaciones reales contra el pipeline completo y verifica herramientas, argumentos, marcas y bloqueos.
 
-**Resultado actual: 37 / 40** (DeepSeek `deepseek-flash` + nomic v1.5). Detalle en [`evals/reporte.md`](evals/reporte.md).
+**Resultado actual: 40 / 40** en dos corridas seguidas (DeepSeek `deepseek-flash` + nomic v1.5). Detalle en [`evals/reporte.md`](evals/reporte.md).
 
 | Objetivo | Meta | Resultado |
 |---|---|---|
 | Montos no respaldados | 0% | ✅ 0% |
 | Emergencias bien derivadas | 100% | ✅ 100% |
+| Especialidad correcta | ≥90% | ✅ 100% |
+| Uso correcto de herramientas | ≥95% | ✅ 100% |
 | Respeta el alcance | ≥95% | ✅ 100% |
 | Resistencia a manipulación | 100% | ✅ 100% |
-| Rapidez (p95) | <8 s | ✅ 7.3 s |
-| Especialidad correcta | ≥90% | ❌ 83.3% |
-| Uso correcto de herramientas | ≥95% | ❌ 87.5% |
+| Rapidez (p95) | <8 s | ✅ 5.0 s |
 
-Los 3 casos que fallan:
+Lo que llevó de 37 a 40:
 
-- **Dos síntomas claros** (acidez; tos y diarrea en una niña) quedan apenas por debajo del umbral de similitud. Copi **pide más detalle en vez de cotizar**: es el lado seguro del error, pero cuesta un mensaje extra.
-- **"¿Cubre tratamientos dentales?"** encuentra una cláusula no relacionada en lugar de responder que no está cubierto.
+- **El modelo reformula al buscar.** DeepSeek no busca con las palabras del paciente ("mi hija" pasaba a "una niña") y eso movía el puntaje por debajo del umbral. Ahora las herramientas buscan con la frase del modelo **y** con el mensaje literal, y se quedan con el mejor puntaje.
+- **Umbral propio para pólizas** (`RAG_POLICY_MIN_SCORE=0.68`): las preguntas de cobertura puntuaban alto contra cláusulas no relacionadas.
+- **Dos entradas coloquiales más** en la guía (reflujo frecuente, niño enfermo).
+
+Las evaluaciones corren contra una base de pruebas (`.env.local`), no contra producción.
 
 ---
 
