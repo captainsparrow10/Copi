@@ -84,12 +84,12 @@ async function loadAseguradoContext(poliza: string): Promise<AseguradoContext> {
   };
 }
 
-interface CarenciaStatus {
+export interface CarenciaStatus {
   enCarencia: boolean;
   diasRestantes?: number;
 }
 
-interface OpcionCotizacion {
+export interface OpcionCotizacion {
   hospital: string;
   tier: string;
   zona: string;
@@ -100,6 +100,29 @@ interface OpcionCotizacion {
   total_paciente: number;
   total_aseguradora: number;
   marcas: string[];
+}
+
+/** Success shape of `cotizar_consulta` (PRD 7.5). Shared with the UI (components/QuoteCard.tsx) so the
+ * quote card renders straight from this type — never by parsing the model's text (PRD Anexo C rule 4). */
+export interface CotizarConsultaSuccess {
+  plan: string;
+  especialidad: string;
+  carencia: CarenciaStatus;
+  recomendado: string | null;
+  opciones: OpcionCotizacion[];
+}
+
+/** Error shape of `cotizar_consulta` when the policy is inactive (PRD 7.4 rule 1). */
+export interface CotizarConsultaError {
+  error: "POLIZA_INACTIVA";
+  mensaje: string;
+}
+
+export type CotizarConsultaOutput = CotizarConsultaSuccess | CotizarConsultaError;
+
+/** Narrows a `cotizar_consulta` tool output to its success shape. */
+export function isCotizarConsultaSuccess(output: CotizarConsultaOutput): output is CotizarConsultaSuccess {
+  return !("error" in output);
 }
 
 /** Builds the four agent tools, closed over `poliza` (PRD 7.5: no tool accepts a policy number). */

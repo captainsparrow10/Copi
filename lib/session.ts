@@ -63,7 +63,9 @@ export async function setSessionCookie(token: string): Promise<void> {
   const store = await cookies();
   store.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: true,
+    // `true` unconditionally would drop the cookie over plain HTTP in dev
+    // (Safari especially, and any LAN-IP access like http://192.168.x.x:3000).
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_TTL_SECONDS,

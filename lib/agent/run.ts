@@ -35,13 +35,17 @@ import { db } from "../db/client";
 import { asegurados, planes, trazas } from "../db/schema";
 import { getSession } from "../session";
 import { checkRateLimit } from "../guards/rate-limit";
-import { buildEmergencyResponse, detectEmergency } from "../guards/emergency";
+import { buildEmergencyResponse, detectEmergency, type EmergencyDetection } from "../guards/emergency";
 import { validateAmounts } from "../guards/amount-validator";
 import { validateCitations } from "../guards/citation-validator";
 import { buildSystemPrompt } from "./system-prompt";
 import { buildTools } from "./tools";
 import { getChatModel } from "./provider";
 
+// PRD 7.7 step 3. Kept in sync by hand with lib/chat/constants.ts's copy,
+// which is what app/chat/page.tsx (a Client Component) imports instead —
+// importing this module client-side would pull `postgres`/`drizzle` into
+// the browser bundle (see that file's comment).
 const MAX_MESSAGE_LENGTH = 500;
 const HISTORY_LIMIT = 12;
 
@@ -90,11 +94,21 @@ async function loadNombrePlan(poliza: string): Promise<{ nombre: string; plan: s
   return rows[0] ?? null;
 }
 
-/** Single-shot UI message stream carrying pre-baked fixed text (emergency bypass — no LLM call). */
-function fixedTextResponse(text: string): Response {
+/**
+ * Single-shot UI message stream carrying pre-baked fixed text (emergency
+ * bypass — no LLM call). Also emits a `data-emergency` part BEFORE the text,
+ * so the client (components/chat/EmergencyBanner.tsx) can key off structured
+ * data instead of matching the fixed Spanish copy against the streamed text.
+ */
+function emergencyResponse(text: string, detection: EmergencyDetection): Response {
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
       writer.write({ type: "start" });
+      writer.write({
+        type: "data-emergency",
+        id: "emergency",
+        data: { matchedPhrase: detection.matchedPhrase ?? null, isSelfHarm: detection.isSelfHarm ?? false },
+      });
       writer.write({ type: "text-start", id: "fixed" });
       writer.write({ type: "text-delta", id: "fixed", delta: text });
       writer.write({ type: "text-end", id: "fixed" });
@@ -235,7 +249,7 @@ export async function runChat({ ip, messages }: { ip: string; messages: ChatMess
   const emergency = detectEmergency(lastMessage.content);
   if (emergency.isEmergency) {
     await logTrace(sesionId, "emergency_bypass", { matchedPhrase: emergency.matchedPhrase ?? null });
-    return { kind: "stream", response: fixedTextResponse(buildEmergencyResponse(emergency)) };
+    return { kind: "stream", response: emergencyResponse(buildEmergencyResponse(emergency), emergency) };
   }
 
   const info = await loadNombrePlan(poliza);
