@@ -13,6 +13,12 @@ if (!connectionString) {
   throw new Error("DATABASE_URL is not set. Define it in .env.local.");
 }
 
-const queryClient = postgres(connectionString);
+// Serverless hosts run many short-lived instances against a database with few
+// connections (InsForge free: 30), so keep each instance's pool small in production
+// and release idle connections quickly.
+const queryClient = postgres(connectionString, {
+  max: Number(process.env.DB_POOL_MAX ?? "10"),
+  idle_timeout: 20,
+});
 
 export const db = drizzle(queryClient, { schema });
