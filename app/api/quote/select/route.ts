@@ -65,6 +65,12 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   const updated = await updateSelection(active.id, validation.opcion.hospital);
+  if (!updated) {
+    return Response.json(
+      { error: { code: "QUOTE_CLOSED", message: "Esta cotización ya está cerrada." } },
+      { status: 400 },
+    );
+  }
   await logTrace(session.sid, "quote_selected", {
     quoteId: updated.id,
     hospital: updated.seleccion,

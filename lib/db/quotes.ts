@@ -7,7 +7,7 @@
  * domain computation (lib/agent/tools.ts).
  */
 import { randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "./client";
 import { cotizaciones } from "./schema";
 import type { CotizarConsultaSuccess } from "../domain/quote-types";
@@ -59,22 +59,21 @@ export async function getActiveQuote(sesionId: string): Promise<QuoteRow | null>
   return row ? toQuoteRow(row) : null;
 }
 
-export async function getQuoteById(id: string): Promise<QuoteRow | null> {
-  const rows = await db.select().from(cotizaciones).where(eq(cotizaciones.id, id)).limit(1);
-  const row = rows[0];
-  return row ? toQuoteRow(row) : null;
-}
-
-/** Updates the selected hospital on an existing (open) quote. Caller validates the hospital first (lib/domain/quote-selection.ts). */
-export async function updateSelection(id: string, hospital: string): Promise<QuoteRow> {
+/**
+ * Updates the selected hospital, only while the quote is still open. The
+ * condition lives in the UPDATE itself so a close that lands between the
+ * route's read and this write can't be overwritten. Returns null when the
+ * quote is missing or already closed. Caller validates the hospital first
+ * (lib/domain/quote-selection.ts).
+ */
+export async function updateSelection(id: string, hospital: string): Promise<QuoteRow | null> {
   const rows = await db
     .update(cotizaciones)
     .set({ seleccion: hospital, actualizadoEn: new Date() })
-    .where(eq(cotizaciones.id, id))
+    .where(and(eq(cotizaciones.id, id), eq(cotizaciones.estado, "abierta")))
     .returning();
   const row = rows[0];
-  if (!row) throw new Error(`updateSelection: no quote with id ${id}`);
-  return toQuoteRow(row);
+  return row ? toQuoteRow(row) : null;
 }
 
 /** Marks a quote closed. Idempotent by design at the call site (app/api/quote/close/route.ts): if already closed, callers skip calling this again and just re-read the existing row. */

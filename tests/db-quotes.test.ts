@@ -86,13 +86,24 @@ describe("lib/db/quotes — 'Select an option' / 'Close the quote' persistence",
     const hospital = active!.payload.opciones[0]!.hospital;
 
     const selected = await updateSelection(active!.id, hospital);
-    expect(selected.seleccion).toBe(hospital);
-    expect(selected.estado).toBe("abierta");
+    expect(selected?.seleccion).toBe(hospital);
+    expect(selected?.estado).toBe("abierta");
 
     const closed = await closeQuoteRow(active!.id);
     expect(closed.estado).toBe("cerrada");
     expect(closed.cerradoEn).not.toBeNull();
     expect(closed.seleccion).toBe(hospital); // closing never touches the selection
+  });
+
+  it("refuses to change the selection of a quote that was closed in between (select/close race)", async () => {
+    const sesionId = randomUUID();
+    const payload = { plan: "Plan Estándar", especialidad: "cardiologia", carencia: { enCarencia: false }, recomendado: null, opciones: [] };
+    const quote = await saveQuote({ sesionId, poliza: "POL-1002", especialidadId: "cardiologia", payload });
+    await updateSelection(quote.id, "Hospital A");
+    await closeQuoteRow(quote.id);
+
+    expect(await updateSelection(quote.id, "Hospital B")).toBeNull();
+    expect((await getActiveQuote(sesionId))?.seleccion).toBe("Hospital A");
   });
 
   it("returns null for a session that has never quoted anything", async () => {
