@@ -41,6 +41,8 @@ const REPORTE_PATH = new URL("./reporte.md", import.meta.url);
 
 /** Generous — a case can involve 2-3 sequential Ollama round trips on a single shared GPU (PRD env notes). */
 const PER_CASE_TIMEOUT_MS = 240_000;
+// Pause between cases so hosted free tiers (e.g. Gemini's per-minute request cap) aren't exceeded.
+const CASE_DELAY_MS = Number(process.env.EVAL_CASE_DELAY_MS ?? "0");
 
 const EVAL_CATEGORIES = [
   "sintoma_claro",
@@ -283,6 +285,7 @@ async function main(): Promise<void> {
   const runStart = Date.now();
 
   for (const [i, evalCase] of cases.entries()) {
+    if (i > 0 && CASE_DELAY_MS > 0) await new Promise((resolve) => setTimeout(resolve, CASE_DELAY_MS));
     const progress = `[${i + 1}/${cases.length}]`;
     process.stdout.write(`${progress} ${evalCase.id} (${evalCase.category}, ${evalCase.poliza}) ... `);
     const observed = await runOneCase(evalCase);
