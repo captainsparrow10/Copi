@@ -8,7 +8,7 @@
 /** Specialties never subject to the waiting period (`carencia`). PRD 7.4 rule 3. */
 export const MEDICINA_GENERAL_ID = "medicina_general";
 
-export type CopayMark = "fuera_de_red" | "carencia";
+export type CopayMark = "fuera_de_red" | "carencia" | "tope";
 
 export interface PlanRules {
   deducibleAnual: number;
@@ -141,6 +141,15 @@ export function calcularCopago(input: CopayInput): CopayResult {
   const totalPaciente = roundHalfUp(Math.min(bruto, topeRestante, precio));
   // 10. Insurer covers the rest.
   const totalAseguradora = roundHalfUp(precio - totalPaciente);
+
+  // UI-facing mark (not a $ amount, so it never touches the grounding
+  // amount-validator): the out-of-pocket cap, not the price itself, is what
+  // capped what the patient owes. Lets the quote card flag "tope alcanzado"
+  // distinctly from a plain full-price line (PRD 6.4's sibling case, evals
+  // 7.9 "carencia / tope / inactiva").
+  if (topeRestante < bruto && topeRestante <= precio) {
+    marcas.push("tope");
+  }
 
   return {
     aDeducible,

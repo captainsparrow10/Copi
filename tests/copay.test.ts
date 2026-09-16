@@ -197,6 +197,7 @@ describe("calcularCopago — reglas PRD 7.4", () => {
     // bruto = 0 + (500*0.3=150) + 20 = 170, tope_restante = 1000-980 = 20
     expect(result.totalPaciente).toBe(20);
     expect(result.totalAseguradora).toBe(480);
+    expect(result.marcas).toContain("tope");
   });
 
   it("regla 9: total_paciente nunca supera el precio, aunque el bruto lo exceda", () => {
@@ -214,6 +215,8 @@ describe("calcularCopago — reglas PRD 7.4", () => {
     const result = calcularCopago(input);
     expect(result.totalPaciente).toBe(15);
     expect(result.totalAseguradora).toBe(0);
+    // capped by the price itself (tope_restante 5000 was never the binding constraint)
+    expect(result.marcas).not.toContain("tope");
   });
 
   it("regla 10: total_aseguradora = precio - total_paciente en el caso general", () => {
