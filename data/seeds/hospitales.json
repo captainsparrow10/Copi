@@ -1,0 +1,8 @@
+[
+  { "id": "HOSP-A1", "nombre": "Hospital Central Bienestar", "tier": "A", "zona": "Via Espana", "enRed": true },
+  { "id": "HOSP-A2", "nombre": "Centro Medico Las Palmas", "tier": "A", "zona": "Costa del Este", "enRed": true },
+  { "id": "HOSP-B1", "nombre": "Clinica San Rafael del Istmo", "tier": "B", "zona": "San Francisco", "enRed": true },
+  { "id": "HOSP-B2", "nombre": "Hospital Metropolitano Vida", "tier": "B", "zona": "Panama Norte", "enRed": true },
+  { "id": "HOSP-C1", "nombre": "Clinica Nueva Esperanza", "tier": "C", "zona": "El Dorado", "enRed": true },
+  { "id": "HOSP-C2", "nombre": "Hospital del Istmo Sur", "tier": "C", "zona": "La Chorrera", "enRed": false }
+]

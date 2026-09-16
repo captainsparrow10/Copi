@@ -1,0 +1,11 @@
+[
+  { "planId": "basico", "tier": "A", "coaseguro": "0.300", "copagoFijo": "15.00" },
+  { "planId": "basico", "tier": "B", "coaseguro": "0.250", "copagoFijo": "12.00" },
+  { "planId": "basico", "tier": "C", "coaseguro": "0.200", "copagoFijo": "10.00" },
+  { "planId": "estandar", "tier": "A", "coaseguro": "0.250", "copagoFijo": "12.00" },
+  { "planId": "estandar", "tier": "B", "coaseguro": "0.200", "copagoFijo": "10.00" },
+  { "planId": "estandar", "tier": "C", "coaseguro": "0.150", "copagoFijo": "8.00" },
+  { "planId": "premium", "tier": "A", "coaseguro": "0.150", "copagoFijo": "8.00" },
+  { "planId": "premium", "tier": "B", "coaseguro": "0.100", "copagoFijo": "5.00" },
+  { "planId": "premium", "tier": "C", "coaseguro": "0.050", "copagoFijo": "3.00" }
+]

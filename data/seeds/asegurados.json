@@ -1,0 +1,53 @@
+[
+  {
+    "poliza": "POL-1001",
+    "nombre": "Ana Solis",
+    "planId": "estandar",
+    "fechaInicio": "2023-01-15",
+    "deducibleUsado": "0.00",
+    "gastoAcumulado": "0.00",
+    "activa": true,
+    "_caso": "deducible sin usar"
+  },
+  {
+    "poliza": "POL-1002",
+    "nombre": "Carlos Mendoza",
+    "planId": "estandar",
+    "fechaInicio": "2022-06-01",
+    "deducibleUsado": "150.00",
+    "gastoAcumulado": "300.00",
+    "activa": true,
+    "_caso": "deducible cubierto"
+  },
+  {
+    "poliza": "POL-1003",
+    "nombre": "Maria Fernandez",
+    "planId": "premium",
+    "fechaInicio": "2021-03-10",
+    "deducibleUsado": "0.00",
+    "gastoAcumulado": "950.00",
+    "activa": true,
+    "_caso": "cerca del tope anual de bolsillo (premium: tope 1000, gasto 950)"
+  },
+  {
+    "poliza": "POL-1004",
+    "nombre": "Jorge Ramirez",
+    "planId": "basico",
+    "fechaInicio": "OVERRIDDEN_AT_SEED_TIME",
+    "deducibleUsado": "0.00",
+    "gastoAcumulado": "0.00",
+    "activa": true,
+    "_caso": "en carencia (plan basico, 30 dias de carencia)",
+    "_fechaInicioNota": "scripts/seed.ts always recomputes this to (today - 10 days) so the demo stays in carencia regardless of when the seed runs; the value here is a placeholder, never inserted as-is"
+  },
+  {
+    "poliza": "POL-1005",
+    "nombre": "Lucia Herrera",
+    "planId": "basico",
+    "fechaInicio": "2020-05-20",
+    "deducibleUsado": "0.00",
+    "gastoAcumulado": "0.00",
+    "activa": false,
+    "_caso": "poliza inactiva"
+  }
+]

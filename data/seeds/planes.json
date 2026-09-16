@@ -1,0 +1,23 @@
+[
+  {
+    "id": "basico",
+    "nombre": "Plan Basico",
+    "deducibleAnual": "300.00",
+    "topeAnualBolsillo": "3000.00",
+    "carenciaEspecialidadDias": 30
+  },
+  {
+    "id": "estandar",
+    "nombre": "Plan Estandar",
+    "deducibleAnual": "150.00",
+    "topeAnualBolsillo": "2000.00",
+    "carenciaEspecialidadDias": 0
+  },
+  {
+    "id": "premium",
+    "nombre": "Plan Premium",
+    "deducibleAnual": "0.00",
+    "topeAnualBolsillo": "1000.00",
+    "carenciaEspecialidadDias": 0
+  }
+]

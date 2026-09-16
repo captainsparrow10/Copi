@@ -1,0 +1,47 @@
+[
+  { "hospitalId": "HOSP-A1", "especialidadId": "medicina_general", "servicio": "consulta", "precio": "35.00" },
+  { "hospitalId": "HOSP-A1", "especialidadId": "cardiologia", "servicio": "consulta", "precio": "90.00" },
+  { "hospitalId": "HOSP-A1", "especialidadId": "dermatologia", "servicio": "consulta", "precio": "60.00" },
+  { "hospitalId": "HOSP-A1", "especialidadId": "gastroenterologia", "servicio": "consulta", "precio": "82.00" },
+  { "hospitalId": "HOSP-A1", "especialidadId": "traumatologia", "servicio": "consulta", "precio": "75.00" },
+  { "hospitalId": "HOSP-A1", "especialidadId": "otorrinolaringologia", "servicio": "consulta", "precio": "55.00" },
+  { "hospitalId": "HOSP-A1", "especialidadId": "ginecologia", "servicio": "consulta", "precio": "68.00" },
+  { "hospitalId": "HOSP-A1", "especialidadId": "pediatria", "servicio": "consulta", "precio": "42.00" },
+
+  { "hospitalId": "HOSP-A2", "especialidadId": "medicina_general", "servicio": "consulta", "precio": "33.00" },
+  { "hospitalId": "HOSP-A2", "especialidadId": "cardiologia", "servicio": "consulta", "precio": "88.00" },
+  { "hospitalId": "HOSP-A2", "especialidadId": "dermatologia", "servicio": "consulta", "precio": "58.00" },
+  { "hospitalId": "HOSP-A2", "especialidadId": "gastroenterologia", "servicio": "consulta", "precio": "80.00" },
+  { "hospitalId": "HOSP-A2", "especialidadId": "traumatologia", "servicio": "consulta", "precio": "72.00" },
+  { "hospitalId": "HOSP-A2", "especialidadId": "otorrinolaringologia", "servicio": "consulta", "precio": "52.00" },
+  { "hospitalId": "HOSP-A2", "especialidadId": "ginecologia", "servicio": "consulta", "precio": "65.00" },
+
+  { "hospitalId": "HOSP-B1", "especialidadId": "medicina_general", "servicio": "consulta", "precio": "25.00" },
+  { "hospitalId": "HOSP-B1", "especialidadId": "cardiologia", "servicio": "consulta", "precio": "65.00" },
+  { "hospitalId": "HOSP-B1", "especialidadId": "dermatologia", "servicio": "consulta", "precio": "45.00" },
+  { "hospitalId": "HOSP-B1", "especialidadId": "gastroenterologia", "servicio": "consulta", "precio": "60.00" },
+  { "hospitalId": "HOSP-B1", "especialidadId": "traumatologia", "servicio": "consulta", "precio": "55.00" },
+  { "hospitalId": "HOSP-B1", "especialidadId": "otorrinolaringologia", "servicio": "consulta", "precio": "40.00" },
+  { "hospitalId": "HOSP-B1", "especialidadId": "pediatria", "servicio": "consulta", "precio": "30.00" },
+
+  { "hospitalId": "HOSP-B2", "especialidadId": "medicina_general", "servicio": "consulta", "precio": "24.00" },
+  { "hospitalId": "HOSP-B2", "especialidadId": "dermatologia", "servicio": "consulta", "precio": "43.00" },
+  { "hospitalId": "HOSP-B2", "especialidadId": "gastroenterologia", "servicio": "consulta", "precio": "58.00" },
+  { "hospitalId": "HOSP-B2", "especialidadId": "traumatologia", "servicio": "consulta", "precio": "53.00" },
+  { "hospitalId": "HOSP-B2", "especialidadId": "ginecologia", "servicio": "consulta", "precio": "48.00" },
+  { "hospitalId": "HOSP-B2", "especialidadId": "pediatria", "servicio": "consulta", "precio": "28.00" },
+
+  { "hospitalId": "HOSP-C1", "especialidadId": "medicina_general", "servicio": "consulta", "precio": "18.00" },
+  { "hospitalId": "HOSP-C1", "especialidadId": "dermatologia", "servicio": "consulta", "precio": "32.00" },
+  { "hospitalId": "HOSP-C1", "especialidadId": "gastroenterologia", "servicio": "consulta", "precio": "42.00" },
+  { "hospitalId": "HOSP-C1", "especialidadId": "traumatologia", "servicio": "consulta", "precio": "38.00" },
+  { "hospitalId": "HOSP-C1", "especialidadId": "otorrinolaringologia", "servicio": "consulta", "precio": "28.00" },
+  { "hospitalId": "HOSP-C1", "especialidadId": "pediatria", "servicio": "consulta", "precio": "20.00" },
+
+  { "hospitalId": "HOSP-C2", "especialidadId": "medicina_general", "servicio": "consulta", "precio": "17.00" },
+  { "hospitalId": "HOSP-C2", "especialidadId": "cardiologia", "servicio": "consulta", "precio": "45.00" },
+  { "hospitalId": "HOSP-C2", "especialidadId": "traumatologia", "servicio": "consulta", "precio": "36.00" },
+  { "hospitalId": "HOSP-C2", "especialidadId": "ginecologia", "servicio": "consulta", "precio": "34.00" },
+  { "hospitalId": "HOSP-C2", "especialidadId": "pediatria", "servicio": "consulta", "precio": "19.00" },
+  { "hospitalId": "HOSP-C2", "especialidadId": "otorrinolaringologia", "servicio": "consulta", "precio": "26.00" }
+]

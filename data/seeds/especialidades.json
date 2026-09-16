@@ -1,0 +1,10 @@
+[
+  { "id": "medicina_general", "nombre": "Medicina General" },
+  { "id": "cardiologia", "nombre": "Cardiologia" },
+  { "id": "dermatologia", "nombre": "Dermatologia" },
+  { "id": "gastroenterologia", "nombre": "Gastroenterologia" },
+  { "id": "traumatologia", "nombre": "Traumatologia" },
+  { "id": "otorrinolaringologia", "nombre": "Otorrinolaringologia" },
+  { "id": "ginecologia", "nombre": "Ginecologia" },
+  { "id": "pediatria", "nombre": "Pediatria" }
+]
