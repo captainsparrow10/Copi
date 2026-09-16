@@ -28,3 +28,24 @@ export function carenciaLabel(diasRestantes: number | undefined): string {
   if (diasRestantes === undefined) return "En período de carencia";
   return `En carencia: ${diasRestantes} día${diasRestantes === 1 ? "" : "s"} restante${diasRestantes === 1 ? "" : "s"}`;
 }
+
+export type StatusTone = "recommended" | "danger" | "muted";
+
+/**
+ * Lines describing a quote option, most important first. Out-of-network wins
+ * outright (never recommended); otherwise the recommendation stays visible
+ * alongside carencia or cap notes.
+ */
+export function optionStatusLines(
+  marcas: readonly string[],
+  isRecommended: boolean,
+): { text: string; tone: StatusTone }[] {
+  if (marcas.includes("fuera_de_red")) {
+    return [{ text: "Fuera de tu red · no lo cubre tu plan", tone: "danger" }];
+  }
+  const lines: { text: string; tone: StatusTone }[] = [];
+  if (isRecommended) lines.push({ text: "La opción más económica de tu red", tone: "recommended" });
+  if (marcas.includes("carencia")) lines.push({ text: "En carencia · pagas el total", tone: "muted" });
+  if (marcas.includes("tope")) lines.push({ text: "Llegas a tu tope anual con esta consulta", tone: "muted" });
+  return lines;
+}

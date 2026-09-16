@@ -12,7 +12,7 @@ import { Check, ShieldAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { CotizarConsultaOutput, OpcionCotizacion } from "@/lib/agent/tools";
 import { computeEffectiveBreakdown } from "@/lib/domain/effective-breakdown";
-import { carenciaLabel } from "@/lib/format/marks";
+import { carenciaLabel, optionStatusLines, type StatusTone } from "@/lib/format/marks";
 import { formatMoney } from "@/lib/format/money";
 
 function especialidadLabel(especialidad: string): string {
@@ -20,20 +20,18 @@ function especialidadLabel(especialidad: string): string {
   return withSpaces.charAt(0).toUpperCase() + withSpaces.slice(1);
 }
 
-function StatusLine({ opcion, isRecommended }: { opcion: OpcionCotizacion; isRecommended: boolean }) {
-  if (opcion.marcas.includes("fuera_de_red")) {
-    return <span className="text-[13px] text-destructive">Fuera de tu red · no lo cubre tu plan</span>;
-  }
-  if (opcion.marcas.includes("carencia")) {
-    return <span className="text-[13px] text-muted-foreground">En carencia · pagas el total</span>;
-  }
-  if (opcion.marcas.includes("tope")) {
-    return <span className="text-[13px] text-muted-foreground">Llegas a tu tope anual con esta consulta</span>;
-  }
-  if (isRecommended) {
-    return <span className="text-[13px] font-medium text-brand">La opción más económica de tu red</span>;
-  }
-  return null;
+const STATUS_TONE_CLASS: Record<StatusTone, string> = {
+  recommended: "font-medium text-brand",
+  danger: "text-destructive",
+  muted: "text-muted-foreground",
+};
+
+function StatusLines({ opcion, isRecommended }: { opcion: OpcionCotizacion; isRecommended: boolean }) {
+  return optionStatusLines(opcion.marcas, isRecommended).map((line) => (
+    <span key={line.text} className={"text-[13px] " + STATUS_TONE_CLASS[line.tone]}>
+      {line.text}
+    </span>
+  ));
 }
 
 function Breakdown({ opcion }: { opcion: OpcionCotizacion }) {
@@ -87,7 +85,7 @@ function OptionRow({ opcion, isRecommended, isSelected, onSelect, selecting, sel
       )}
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="text-[15px] font-medium">{opcion.hospital}</span>
-        <StatusLine opcion={opcion} isRecommended={isRecommended} />
+        <StatusLines opcion={opcion} isRecommended={isRecommended} />
         <span className="text-[13px] text-muted-foreground">
           Tier {opcion.tier} · {opcion.zona}
         </span>
