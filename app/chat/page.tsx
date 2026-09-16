@@ -11,7 +11,9 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
-import { AlertTriangle, ArrowRight, RotateCcw } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, ArrowRight, LogOut, RotateCcw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,6 +38,7 @@ import type { PatientProfile } from "@/lib/domain/profile";
 type SessionState = "checking" | "active" | "none";
 
 export default function ChatPage() {
+  const router = useRouter();
   const [patients, setPatients] = useState<DemoPatient[] | null>(null);
   const [sessionState, setSessionState] = useState<SessionState>("checking");
   // Bumped on every new session (patient switch or "Nueva consulta") so the
@@ -227,6 +230,16 @@ export default function ChatPage() {
     setInput("");
   }
 
+  /** Ends the session and goes back to the landing page. */
+  async function handleExit(): Promise<void> {
+    stop();
+    try {
+      await fetch("/api/session", { method: "DELETE" });
+    } finally {
+      router.push("/");
+    }
+  }
+
   function handleNewConsultation(): void {
     if (profile) void startSession(profile.poliza);
   }
@@ -235,7 +248,15 @@ export default function ChatPage() {
     <div className="mx-auto grid min-h-dvh w-full max-w-[1440px] grid-cols-1 gap-4 px-4 py-4 lg:h-dvh lg:grid-cols-[264px_minmax(0,1fr)_340px] lg:gap-5 lg:py-3.5">
       <div className="lg:overflow-y-auto">
         <div className="mb-7 flex flex-col gap-1.5 px-3.5 pt-3.5">
-          <Logo size={30} />
+          <div className="flex items-center justify-between gap-2">
+            <Link href="/" aria-label="Ir al inicio" className="w-fit rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+              <Logo size={30} />
+            </Link>
+            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={() => void handleExit()}>
+              <LogOut className="size-3.5" aria-hidden="true" />
+              Salir
+            </Button>
+          </div>
           <p className="text-[13px] text-muted-foreground">Tu copago, antes de atenderte</p>
         </div>
         <PatientList
