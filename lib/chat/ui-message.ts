@@ -29,12 +29,20 @@ export function toChatMessages(messages: UIMessage[]): ChatMessage[] {
   return result;
 }
 
-/** Concatenates a message's `text` parts, in order. Shared by `toChatMessages` and app/chat/page.tsx's message bubbles. */
+/**
+ * A message's `text` parts, in order. Shared by `toChatMessages` and app/chat/page.tsx's
+ * message bubbles. Each assistant text part comes from a separate model step (e.g. before
+ * and after a tool call), so those become paragraphs instead of running together.
+ */
 export function getMessageText(message: UIMessage): string {
-  return message.parts
+  const texts = message.parts
     .filter((part): part is Extract<UIMessage["parts"][number], { type: "text" }> => part.type === "text")
-    .map((part) => part.text)
-    .join("");
+    .map((part) => part.text);
+  if (message.role !== "assistant") return texts.join("");
+  return texts
+    .map((text) => text.trim())
+    .filter((text) => text.length > 0)
+    .join("\n\n");
 }
 
 export interface QuoteMatch {

@@ -38,13 +38,21 @@ describe("toChatMessages (Phase 3 /api/chat contract adapter)", () => {
 });
 
 describe("getMessageText", () => {
-  it("joins text parts and ignores other part types", () => {
+  it("separates an assistant's text from different steps into paragraphs and ignores other part types", () => {
+    // Production bug: "…para tu síntoma.Para tu dolor…" — step texts were glued without a space.
     const message = fakeMessage("assistant", [
-      { type: "text", text: "Hola, " },
-      { type: "tool-cotizar_consulta", state: "output-available", output: {} },
-      { type: "text", text: "¿en qué te ayudo?" },
+      { type: "text", text: "Voy a buscar la especialidad adecuada para tu síntoma." },
+      { type: "tool-buscar_especialidad", state: "output-available", output: {} },
+      { type: "text", text: "Para tu dolor de rodilla, te conviene traumatología." },
     ]);
-    expect(getMessageText(message)).toBe("Hola, ¿en qué te ayudo?");
+    expect(getMessageText(message)).toBe(
+      "Voy a buscar la especialidad adecuada para tu síntoma.\n\nPara tu dolor de rodilla, te conviene traumatología.",
+    );
+  });
+
+  it("keeps a user's text parts joined as typed", () => {
+    const message = fakeMessage("user", [{ type: "text", text: "Me duele la " }, { type: "text", text: "rodilla" }]);
+    expect(getMessageText(message)).toBe("Me duele la rodilla");
   });
 
   it("returns an empty string when there are no text parts", () => {
