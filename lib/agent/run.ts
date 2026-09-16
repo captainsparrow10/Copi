@@ -302,7 +302,7 @@ export async function runChatForPoliza({
 
   // 5-7. streamText + grounding + tracing.
   try {
-    const tools = await buildTools(poliza, sesionId);
+    const tools = await buildTools(poliza, sesionId, lastMessage.content);
 
     // Cross-turn grounding bug fix: a follow-up question ("qué diferencia
     // hay con el recomendado") never calls cotizar_consulta again this

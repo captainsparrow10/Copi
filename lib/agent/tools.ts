@@ -140,9 +140,10 @@ export function isCotizarConsultaSuccess(output: CotizarConsultaOutput): output 
 
 /**
  * Builds the four agent tools, closed over `poliza` (PRD 7.5: no tool accepts a policy number)
- * and the browser session id, which scopes the persisted quote.
+ * and the browser session id, which scopes the persisted quote. `mensajePaciente` (the patient's
+ * literal message) is searched alongside the model's own query, which can lose matching words.
  */
-export async function buildTools(poliza: string, sesionId: string) {
+export async function buildTools(poliza: string, sesionId: string, mensajePaciente = "") {
   const [especialidadEnum, ctx] = await Promise.all([buildEspecialidadEnum(), loadAseguradoContext(poliza)]);
 
   // Per-turn ordering state (PRD Anexo A rule 3: buscar_especialidad ->
@@ -168,7 +169,8 @@ export async function buildTools(poliza: string, sesionId: string) {
     }),
     execute: async ({ sintoma }) => {
       buscarEspecialidadCalledThisTurn = true;
-      const matches = await buscarEnGuiaEspecialidades(sintoma);
+      // Also search with the patient's literal words: the model's rewrite can lose the matching terms.
+      const matches = await buscarEnGuiaEspecialidades(sintoma, mensajePaciente);
 
       // Dedup by especialidadId, keeping the highest score. `matches` is
       // already ordered by score desc (lib/rag/search.ts), so the first
@@ -366,7 +368,7 @@ export async function buildTools(poliza: string, sesionId: string) {
       pregunta: z.string().min(3).max(300).describe("Pregunta de cobertura del paciente."),
     }),
     execute: async ({ pregunta }) => {
-      const fragmentos = await buscarEnPoliza(pregunta, ctx.planId);
+      const fragmentos = await buscarEnPoliza(ctx.planId, pregunta, mensajePaciente);
       if (fragmentos.length === 0) {
         return { motivo: "NO_ENCONTRADO" as const };
       }

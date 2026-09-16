@@ -19,6 +19,14 @@ function ragMinScore(): number {
   return Number(process.env.RAG_MIN_SCORE ?? "0.70");
 }
 
+/**
+ * Policy questions ("¿mi póliza cubre…?") score high against any clause, even an
+ * unrelated one, so policy search can use a stricter threshold than the guide.
+ */
+function policyMinScore(): number {
+  return Number(process.env.RAG_POLICY_MIN_SCORE ?? process.env.RAG_MIN_SCORE ?? "0.70");
+}
+
 export interface ScoredFragment {
   id: string;
   contenido: string;
@@ -39,11 +47,38 @@ export function aplicarUmbral<T extends { score: number }>(resultados: T[], minS
 }
 
 /**
+ * Pure: merges result lists from several queries, keeping each fragment once
+ * with its best score, best first, at most `limit`.
+ */
+export function mezclarMejoresPuntajes<T extends { id: string; score: number }>(listas: T[][], limit: number): T[] {
+  const best = new Map<string, T>();
+  for (const lista of listas) {
+    for (const resultado of lista) {
+      const actual = best.get(resultado.id);
+      if (!actual || resultado.score > actual.score) best.set(resultado.id, resultado);
+    }
+  }
+  return [...best.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+/** Distinct, non-empty queries: the model's phrasing plus the patient's own words. */
+function consultasDistintas(queries: string[]): string[] {
+  return [...new Set(queries.map((q) => q.trim()).filter((q) => q.length > 0))];
+}
+
+/**
  * Searches `data/docs/guia-especialidades.md` fragments for the specialty
  * that best matches a free-text symptom. Backs the `buscar_especialidad`
  * tool: an empty array means "no match above the threshold" (SIN_COINCIDENCIAS).
+ * Pass the patient's literal message as well as the model's rewrite: the model
+ * sometimes drops the words that match the guide (e.g. "mi hija" → "una niña").
  */
-export async function buscarEnGuiaEspecialidades(sintoma: string): Promise<GuiaMatch[]> {
+export async function buscarEnGuiaEspecialidades(...sintomas: string[]): Promise<GuiaMatch[]> {
+  const listas = await Promise.all(consultasDistintas(sintomas).map((q) => buscarGuiaUnaConsulta(q)));
+  return aplicarUmbral(mezclarMejoresPuntajes(listas, TOP_K), ragMinScore());
+}
+
+async function buscarGuiaUnaConsulta(sintoma: string): Promise<GuiaMatch[]> {
   const queryEmbedding = await embedText(sintoma, "query");
   const similarity = sql<number>`1 - (${cosineDistance(fragmentos.embedding, queryEmbedding)})`;
 
@@ -60,13 +95,12 @@ export async function buscarEnGuiaEspecialidades(sintoma: string): Promise<GuiaM
     .orderBy(desc(similarity))
     .limit(TOP_K);
 
-  const resultados = rows.map((row) => ({
+  return rows.map((row) => ({
     id: row.id,
     contenido: row.contenido,
     especialidadId: row.especialidadId ?? "",
     score: Number(row.score),
   }));
-  return aplicarUmbral(resultados, ragMinScore());
 }
 
 /**
@@ -75,7 +109,12 @@ export async function buscarEnGuiaEspecialidades(sintoma: string): Promise<GuiaM
  * policy/plan argument from the model) — this is the enforcement point that
  * keeps one plan's clauses out of another plan's answers.
  */
-export async function buscarEnPoliza(pregunta: string, planId: string): Promise<ScoredFragment[]> {
+export async function buscarEnPoliza(planId: string, ...preguntas: string[]): Promise<ScoredFragment[]> {
+  const listas = await Promise.all(consultasDistintas(preguntas).map((q) => buscarPolizaUnaConsulta(q, planId)));
+  return aplicarUmbral(mezclarMejoresPuntajes(listas, TOP_K), policyMinScore());
+}
+
+async function buscarPolizaUnaConsulta(pregunta: string, planId: string): Promise<ScoredFragment[]> {
   const queryEmbedding = await embedText(pregunta, "query");
   const similarity = sql<number>`1 - (${cosineDistance(fragmentos.embedding, queryEmbedding)})`;
 
@@ -91,6 +130,5 @@ export async function buscarEnPoliza(pregunta: string, planId: string): Promise<
     .orderBy(desc(similarity))
     .limit(TOP_K);
 
-  const resultados = rows.map((row) => ({ id: row.id, contenido: row.contenido, score: Number(row.score) }));
-  return aplicarUmbral(resultados, ragMinScore());
+  return rows.map((row) => ({ id: row.id, contenido: row.contenido, score: Number(row.score) }));
 }
