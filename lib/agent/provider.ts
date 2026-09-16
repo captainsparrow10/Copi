@@ -46,7 +46,14 @@ function deepseekModel(): LanguageModel {
   if (!CHAT_MODEL) throw new Error("CHAT_MODEL is not set. Define it in .env.local.");
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not set. Define it in .env.local.");
-  const deepseek = createOpenAICompatible({ name: "deepseek", baseURL: DEEPSEEK_BASE_URL, apiKey });
+  const deepseek = createOpenAICompatible({
+    name: "deepseek",
+    baseURL: DEEPSEEK_BASE_URL,
+    apiKey,
+    // deepseek-flash defaults to thinking mode, which rejects a forced tool_choice
+    // (lib/agent/step-policy.ts forces cotizar_consulta) and can leak reasoning text.
+    transformRequestBody: (body) => ({ ...body, thinking: { type: "disabled" } }),
+  });
   return deepseek(CHAT_MODEL);
 }
 
