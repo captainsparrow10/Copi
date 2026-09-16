@@ -24,6 +24,13 @@ describe("lib/agent/tools — PRD 7.5", () => {
 
   it("cotizar_consulta flags carencia for POL-1004 + cardiologia (10 days in, 30-day waiting period)", async () => {
     const tools = await buildTools("POL-1004");
+    // Ordering enforcement (PRD Anexo A rule 3) requires buscar_especialidad
+    // to run first in the same turn — see the dedicated test below for the
+    // enforcement itself.
+    await tools.buscar_especialidad.execute!(
+      { sintoma: "tengo palpitaciones" },
+      { toolCallId: "t1b", messages: [], context: {} },
+    );
     const result = (await tools.cotizar_consulta.execute!(
       { especialidad: "cardiologia" },
       { toolCallId: "t2", messages: [], context: {} },
@@ -51,6 +58,62 @@ describe("lib/agent/tools — PRD 7.5", () => {
 
     expect(result.error).toBe("POLIZA_INACTIVA");
     expect(typeof result.mensaje).toBe("string");
+  });
+
+  /**
+   * Regression: mark-fueradered-01 (Phase 5 evals) — the model called
+   * cotizar_consulta directly, skipping the mandatory buscar_especialidad
+   * step (PRD Anexo A rule 3a), because the patient had already named a
+   * specialist in plain language ("quiero ver un cardiologo"). The tool
+   * itself must reject that, regardless of what the model inferred from
+   * the message.
+   */
+  it("cotizar_consulta returns FALTA_BUSCAR_ESPECIALIDAD when buscar_especialidad wasn't called this turn", async () => {
+    const tools = await buildTools("POL-1001");
+    const result = (await tools.cotizar_consulta.execute!(
+      { especialidad: "cardiologia" },
+      { toolCallId: "t5", messages: [], context: {} },
+    )) as { error?: string; mensaje?: string };
+
+    expect(result.error).toBe("FALTA_BUSCAR_ESPECIALIDAD");
+    expect(typeof result.mensaje).toBe("string");
+  });
+
+  /**
+   * Regression: ambig-03 / ambig-04 (Phase 5 evals) — after
+   * buscar_especialidad returns SIN_COINCIDENCIAS, the model must ask a
+   * clarifying question and stop, but qwen2.5:14b sometimes invented a
+   * specialty on its own and called cotizar_consulta anyway in the same
+   * turn. The tool itself must refuse that.
+   */
+  it("cotizar_consulta returns SIN_ESPECIALIDAD_CONFIRMADA when buscar_especialidad returned SIN_COINCIDENCIAS this turn", async () => {
+    const tools = await buildTools("POL-1001");
+    await tools.buscar_especialidad.execute!(
+      { sintoma: "no me siento bien pero no se decir que es exactamente" },
+      { toolCallId: "t7a", messages: [], context: {} },
+    );
+    const result = (await tools.cotizar_consulta.execute!(
+      { especialidad: "cardiologia" },
+      { toolCallId: "t7b", messages: [], context: {} },
+    )) as { error?: string; mensaje?: string };
+
+    expect(result.error).toBe("SIN_ESPECIALIDAD_CONFIRMADA");
+    expect(typeof result.mensaje).toBe("string");
+  });
+
+  it("cotizar_consulta succeeds once buscar_especialidad has been called earlier in the same turn", async () => {
+    const tools = await buildTools("POL-1001");
+    await tools.buscar_especialidad.execute!(
+      { sintoma: "tengo palpitaciones" },
+      { toolCallId: "t6a", messages: [], context: {} },
+    );
+    const result = (await tools.cotizar_consulta.execute!(
+      { especialidad: "cardiologia" },
+      { toolCallId: "t6b", messages: [], context: {} },
+    )) as { error?: string; opciones?: unknown[] };
+
+    expect(result.error).toBeUndefined();
+    expect(Array.isArray(result.opciones)).toBe(true);
   });
 
   it("obtener_resumen_plan returns the documented shape", async () => {

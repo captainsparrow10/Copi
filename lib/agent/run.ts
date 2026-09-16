@@ -23,6 +23,7 @@ import { eq } from "drizzle-orm";
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
+  InvalidResponseDataError,
   stepCountIs,
   streamText,
   toUIMessageStream,
@@ -38,6 +39,8 @@ import { checkRateLimit } from "../guards/rate-limit";
 import { buildEmergencyResponse, detectEmergency, type EmergencyDetection } from "../guards/emergency";
 import { validateAmounts } from "../guards/amount-validator";
 import { validateCitations } from "../guards/citation-validator";
+import { containsToolCallArtifact } from "../guards/tool-syntax-validator";
+import { isDegenerateRepetition } from "../guards/text-quality-validator";
 import { buildSystemPrompt } from "./system-prompt";
 import { buildTools } from "./tools";
 import { getChatModel } from "./provider";
@@ -150,7 +153,12 @@ interface LocalTextEnd {
 
 function createGroundingTransform<TOOLS extends ToolSet>(
   toolResultsAcc: ToolResultRecord[],
-  onBlock: (reason: { invalidAmounts: string[]; invalidCitations: string[] }) => void,
+  onBlock: (reason: {
+    invalidAmounts: string[];
+    invalidCitations: string[];
+    toolSyntaxLeak?: boolean;
+    degenerateOutput?: boolean;
+  }) => void,
 ): StreamTextTransform<TOOLS> {
   return () => {
     type Part = TextStreamPart<TOOLS>;
@@ -163,10 +171,27 @@ function createGroundingTransform<TOOLS extends ToolSet>(
       const fullText = deltas.map((d) => d.text).join("");
       const amounts = validateAmounts(fullText, toolResultsAcc);
       const citations = validateCitations(fullText, toolResultsAcc);
+      // PRD 7.8 grounding, Phase 5 evals bug 4a: qwen2.5:14b occasionally
+      // leaks raw tool-call syntax as prose instead of issuing a real tool
+      // call (_icall_ markers, <tool_call> blocks, bare {"name":...,
+      // "arguments":...} JSON). That's never a valid answer for the
+      // patient — block it the same way an ungrounded amount/citation is
+      // blocked, before it ever reaches the client.
+      const toolSyntaxLeak = fullText.length > 0 && containsToolCallArtifact(fullText);
+      // PRD bug 7 (ambig-01): a transient Ollama/qwen2.5:14b decoding
+      // glitch can produce the same short token repeated dozens of times
+      // instead of real prose or a clean stream error — degrade that the
+      // same way as any other ungrounded/invalid text.
+      const degenerateOutput = fullText.length > 0 && isDegenerateRepetition(fullText);
 
       controller.enqueue(textStart as unknown as Part);
-      if (fullText.length > 0 && (!amounts.valid || !citations.valid)) {
-        onBlock({ invalidAmounts: amounts.invalidAmounts, invalidCitations: citations.invalidCitations });
+      if (fullText.length > 0 && (!amounts.valid || !citations.valid || toolSyntaxLeak || degenerateOutput)) {
+        onBlock({
+          invalidAmounts: amounts.invalidAmounts,
+          invalidCitations: citations.invalidCitations,
+          ...(toolSyntaxLeak ? { toolSyntaxLeak: true } : {}),
+          ...(degenerateOutput ? { degenerateOutput: true } : {}),
+        });
         controller.enqueue({ type: "text-delta", id: textStart.id, text: SAFE_FALLBACK_TEXT } as unknown as Part);
       } else {
         for (const delta of deltas) controller.enqueue(delta as unknown as Part);
@@ -291,7 +316,22 @@ export async function runChatForPoliza({
       .map((m) => ({ role: m.role, content: m.content }));
 
     const toolResultsAcc: ToolResultRecord[] = [];
-    let blocked: { invalidAmounts: string[]; invalidCitations: string[] } | null = null;
+    let blocked: {
+      invalidAmounts: string[];
+      invalidCitations: string[];
+      toolSyntaxLeak?: boolean;
+      degenerateOutput?: boolean;
+    } | null = null;
+    // PRD bug 7 (ambig-01, AI_InvalidResponseDataError): Ollama's streaming
+    // endpoint occasionally sends a chunk the AI SDK can't parse into the
+    // expected shape, surfacing as `InvalidResponseDataError` mid-stream.
+    // That's transient — retry it once via the SDK's own retry-capable
+    // `onError` (returning `{ retry: true }` re-attempts the call; see
+    // `streamRetries`/`onError` in `ai`'s `streamText` docs) instead of
+    // letting it reach the client as a crash. Any other error, or a second
+    // occurrence of this one, falls through to normal error logging and
+    // `toUIMessageStream`'s `onError` below turns it into a clean message.
+    let retriedInvalidResponseData = false;
 
     const result = streamText({
       model: getChatModel(),
@@ -300,6 +340,31 @@ export async function runChatForPoliza({
       tools,
       temperature: 0.2,
       stopWhen: stepCountIs(5),
+      // PRD Anexo A rule 3 / PRD 6.2, Phase 5 evals (mark-fueradered-01,
+      // ambig-03, ambig-04): `cotizar_consulta`'s own structured-error
+      // guards (see lib/agent/tools.ts) stop a WRONG quote from being
+      // returned, but the model can still attempt the call — which still
+      // shows up as a "cotizar_consulta was called" tool-use event even
+      // though it errored. `prepareStep` removes the tool from the
+      // candidate set entirely for any step where it isn't legal yet, so
+      // the model can't call it at all until a same-turn
+      // buscar_especialidad step has resolved to a real specialty. This is
+      // pure allow-list narrowing over already-defined tools (no new
+      // tool-call round trip, no extra prompt text) — the execute-level
+      // errors stay as a defense-in-depth fallback for any edge case this
+      // narrowing doesn't cover (e.g. a provider that ignores activeTools).
+      prepareStep: ({ steps }) => {
+        const toolResultsSoFar = steps.flatMap((step) => step.toolResults);
+        const lastBuscarEspecialidad = [...toolResultsSoFar]
+          .reverse()
+          .find((result) => result.toolName === "buscar_especialidad");
+        const output = lastBuscarEspecialidad?.output as { motivo?: string } | undefined;
+        const canQuote = lastBuscarEspecialidad !== undefined && output?.motivo !== "SIN_COINCIDENCIAS";
+        if (!canQuote) {
+          return { activeTools: ["buscar_especialidad", "obtener_resumen_plan", "buscar_en_poliza"] };
+        }
+        return undefined;
+      },
       experimental_transform: createGroundingTransform<typeof tools>(toolResultsAcc, (reason) => {
         blocked = reason;
       }),
@@ -314,10 +379,26 @@ export async function runChatForPoliza({
       onError: ({ error }) => {
         console.error("streamText onError:", error);
         void logTrace(sesionId, "error", { message: error instanceof Error ? error.message : String(error) });
+        if (!retriedInvalidResponseData && InvalidResponseDataError.isInstance(error)) {
+          retriedInvalidResponseData = true;
+          void logTrace(sesionId, "error", { message: "retrying once after AI_InvalidResponseDataError" });
+          return { retry: true };
+        }
       },
     });
 
-    const uiStream = toUIMessageStream({ stream: result.stream, tools });
+    const uiStream = toUIMessageStream({
+      stream: result.stream,
+      tools,
+      // Never leak a raw provider/SDK error (stack traces, internal
+      // messages) to the patient — degrade to the same copy used for a
+      // guard-layer LLM_UNAVAILABLE failure.
+      onError: (error) => {
+        console.error("toUIMessageStream onError:", error);
+        void logTrace(sesionId, "error", { message: error instanceof Error ? error.message : String(error) });
+        return LLM_UNAVAILABLE_MESSAGE;
+      },
+    });
     return { kind: "stream", response: createUIMessageStreamResponse({ stream: uiStream }) };
   } catch (err) {
     console.error("runChat LLM_UNAVAILABLE:", err);

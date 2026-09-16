@@ -110,12 +110,23 @@ function OptionCard({ opcion, isRecommended }: { opcion: OpcionCotizacion; isRec
   );
 }
 
+const ERROR_TITLES: Record<string, string> = {
+  POLIZA_INACTIVA: "Póliza inactiva",
+  // Internal ordering-enforcement error (PRD Anexo A rule 3): the model is
+  // expected to self-correct by calling buscar_especialidad and retrying
+  // within the same turn, so this card should rarely render in practice —
+  // it's still handled explicitly instead of falling back to the wrong
+  // "Póliza inactiva" title if the model ever surfaces it as its final answer.
+  FALTA_BUSCAR_ESPECIALIDAD: "Falta un paso previo",
+  SIN_ESPECIALIDAD_CONFIRMADA: "Falta confirmar el síntoma",
+};
+
 export function QuoteCard({ quote }: { quote: CotizarConsultaOutput }) {
   if ("error" in quote) {
     return (
       <Alert variant="destructive">
         <ShieldAlert />
-        <AlertTitle>Póliza inactiva</AlertTitle>
+        <AlertTitle>{ERROR_TITLES[quote.error] ?? "No se pudo cotizar"}</AlertTitle>
         <AlertDescription>{quote.mensaje}</AlertDescription>
       </Alert>
     );

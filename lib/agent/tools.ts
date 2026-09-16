@@ -118,7 +118,39 @@ export interface CotizarConsultaError {
   mensaje: string;
 }
 
-export type CotizarConsultaOutput = CotizarConsultaSuccess | CotizarConsultaError;
+/**
+ * Error shape of `cotizar_consulta` when the model skips the mandatory
+ * first step (PRD Anexo A rule 3a / Phase 5 evals bug: mark-fueradered-01
+ * called `cotizar_consulta` directly, with no `buscar_especialidad` call
+ * this turn). Returned instead of a quote so the model can self-correct
+ * within the same turn (`stepCountIs(5)` in lib/agent/run.ts leaves room for
+ * a retry) rather than silently producing a quote from a specialty the
+ * patient never confirmed via the guide.
+ */
+export interface CotizarConsultaOrderError {
+  error: "FALTA_BUSCAR_ESPECIALIDAD";
+  mensaje: string;
+}
+
+/**
+ * Error shape of `cotizar_consulta` when `buscar_especialidad` was called
+ * this turn but returned SIN_COINCIDENCIAS (PRD 6.2 ambiguous-symptom flow
+ * / Phase 5 evals: ambig-03, ambig-04 — the model asked the required
+ * clarifying question but then invented a specialty on its own and quoted
+ * it anyway, in the same turn). The patient hasn't confirmed a specialty
+ * yet, so there is nothing valid to cotizar until they answer the
+ * clarifying question in a follow-up turn.
+ */
+export interface CotizarConsultaAmbiguousError {
+  error: "SIN_ESPECIALIDAD_CONFIRMADA";
+  mensaje: string;
+}
+
+export type CotizarConsultaOutput =
+  | CotizarConsultaSuccess
+  | CotizarConsultaError
+  | CotizarConsultaOrderError
+  | CotizarConsultaAmbiguousError;
 
 /** Narrows a `cotizar_consulta` tool output to its success shape. */
 export function isCotizarConsultaSuccess(output: CotizarConsultaOutput): output is CotizarConsultaSuccess {
@@ -129,15 +161,29 @@ export function isCotizarConsultaSuccess(output: CotizarConsultaOutput): output 
 export async function buildTools(poliza: string) {
   const [especialidadEnum, ctx] = await Promise.all([buildEspecialidadEnum(), loadAseguradoContext(poliza)]);
 
+  // Per-turn ordering state (PRD Anexo A rule 3: buscar_especialidad ->
+  // cotizar_consulta, in that order). `buildTools` is called once per
+  // `/api/chat` turn (lib/agent/run.ts), so this flag naturally resets
+  // every turn — it must NOT be hoisted above `buildTools` or it would leak
+  // across turns/policies.
+  let buscarEspecialidadCalledThisTurn = false;
+  // Tracks the LAST buscar_especialidad result this turn: if it came back
+  // SIN_COINCIDENCIAS, the patient hasn't confirmed a real specialty yet
+  // (PRD 6.2) — cotizar_consulta must refuse until a later turn resolves it.
+  let lastBuscarEspecialidadHadMatches = false;
+
   const buscar_especialidad = tool({
     description:
       "Busca en la guía de especialidades médicas cuál especialidad conviene según el síntoma del paciente. " +
-      "Debe llamarse SIEMPRE como primer paso ante cualquier síntoma nuevo, antes de cotizar. " +
+      "OBLIGATORIO: debe ser la PRIMERA herramienta que llames ante cualquier síntoma nuevo, incluso si el " +
+      "paciente ya menciona el nombre de un especialista (por ejemplo 'quiero ver un cardiólogo') — " +
+      "cotizar_consulta rechaza la cotización si no la llamaste antes en este mismo turno. " +
       "Si devuelve SIN_COINCIDENCIAS, no cotices: haz una pregunta breve para aclarar el síntoma.",
     inputSchema: z.object({
       sintoma: z.string().min(3).max(300).describe("Descripción del síntoma en palabras del paciente."),
     }),
     execute: async ({ sintoma }) => {
+      buscarEspecialidadCalledThisTurn = true;
       const matches = await buscarEnGuiaEspecialidades(sintoma);
 
       // Dedup by especialidadId, keeping the highest score. `matches` is
@@ -156,6 +202,7 @@ export async function buildTools(poliza: string) {
         });
       }
 
+      lastBuscarEspecialidadHadMatches = resultados.length > 0;
       if (resultados.length === 0) {
         return { resultados: [], motivo: "SIN_COINCIDENCIAS" as const };
       }
@@ -167,8 +214,9 @@ export async function buildTools(poliza: string) {
     description:
       "Cotiza el copago de una consulta para una especialidad, en todos los hospitales que la ofrecen. " +
       "Usa el plan y la póliza del paciente actual (ya identificados por el sistema); nunca pidas un número de póliza. " +
-      "Devuelve las opciones ordenadas de más barata a más cara. Llama a esta herramienta solo después de " +
-      "buscar_especialidad, con la especialidad elegida.",
+      "Devuelve las opciones ordenadas de más barata a más cara. OBLIGATORIO: llama primero a " +
+      "buscar_especialidad en este mismo turno y usa la especialidad que eligió esa herramienta — si no la " +
+      "llamaste antes, o si devolvió SIN_COINCIDENCIAS, esta herramienta devuelve un error en vez de una cotización.",
     inputSchema: z.object({
       especialidad: especialidadEnum.describe("Id de la especialidad del catálogo (no el nombre libre)."),
       zona: z.string().optional().describe("Zona/ciudad preferida del paciente, si la mencionó."),
@@ -177,6 +225,31 @@ export async function buildTools(poliza: string) {
       try {
         if (!ctx.activa) {
           throw new PolizaInactivaError();
+        }
+        // PRD Anexo A rule 3 / Phase 5 evals bug 4b (mark-fueradered-01):
+        // cotizar_consulta must never run ahead of buscar_especialidad in
+        // the same turn, even when the patient already named a specialist
+        // by ordinary language ("quiero ver un cardiólogo") — the guide
+        // lookup is what confirms/citas the specialty, not the model's own
+        // reading of the message. A structured error (rather than a thrown
+        // exception) lets the model self-correct within the same
+        // multi-step turn (stepCountIs(5) in lib/agent/run.ts).
+        if (!buscarEspecialidadCalledThisTurn) {
+          return {
+            error: "FALTA_BUSCAR_ESPECIALIDAD" as const,
+            mensaje: "Debes llamar primero a buscar_especialidad en este turno antes de cotizar.",
+          };
+        }
+        // PRD 6.2 ambiguous-symptom flow / Phase 5 evals bug (ambig-03,
+        // ambig-04): buscar_especialidad returning SIN_COINCIDENCIAS means
+        // the patient hasn't confirmed a real specialty — the model must
+        // ask ONE clarifying question and stop, not guess a specialty on
+        // its own and quote it anyway in the same turn.
+        if (!lastBuscarEspecialidadHadMatches) {
+          return {
+            error: "SIN_ESPECIALIDAD_CONFIRMADA" as const,
+            mensaje: "buscar_especialidad no encontró coincidencias: haz una pregunta para aclarar el síntoma, no cotices.",
+          };
         }
 
         const tierRows = await db
@@ -293,9 +366,13 @@ export async function buildTools(poliza: string) {
 
   const buscar_en_poliza = tool({
     description:
-      "Busca en el documento de la póliza del plan del paciente actual la respuesta a una duda de cobertura. " +
-      "Cita cada afirmación con el id del fragmento devuelto, por ejemplo [C-4.2]. Si devuelve NO_ENCONTRADO, " +
-      "responde exactamente: \"No encontré esa información en tu póliza. Te recomiendo consultar con tu aseguradora.\"",
+      "Busca en el documento de la póliza del plan del paciente actual la respuesta a una duda de cobertura: " +
+      "deducible, coaseguro, tope anual de bolsillo, período de carencia, red de hospitales u hospitales fuera " +
+      "de red, exclusiones, qué cubre el plan, glosario de términos, etc. OBLIGATORIO: llama SIEMPRE a esta " +
+      "herramienta ante cualquiera de esas preguntas — nunca respondas de memoria ni con conocimiento propio " +
+      "sobre pólizas. Cita cada afirmación con el id del fragmento devuelto, por ejemplo [C-4.2]. Si devuelve " +
+      "NO_ENCONTRADO, responde exactamente: \"No encontré esa información en tu póliza. Te recomiendo consultar " +
+      "con tu aseguradora.\"",
     inputSchema: z.object({
       pregunta: z.string().min(3).max(300).describe("Pregunta de cobertura del paciente."),
     }),
