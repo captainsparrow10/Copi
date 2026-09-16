@@ -18,10 +18,10 @@ import { asegurados, especialidades, hospitales, planes, planTierReglas, tarifar
 import { buscarEnGuiaEspecialidades, buscarEnPoliza } from "../rag/search";
 import { calcularCopago, PolizaInactivaError, type PlanRules } from "../domain/copay";
 import { pickRecommended } from "../domain/recommend";
+import { computeCarencia } from "../domain/profile";
 import type { CarenciaStatus, OpcionCotizacion, CotizarConsultaSuccess } from "../domain/quote-types";
 import { saveQuote } from "../db/quotes";
 
-const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 function roundTo2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -341,11 +341,8 @@ export async function buildTools(poliza: string, sesionId: string) {
       const deducibleRestante = roundTo2(Math.max(ctx.plan.deducibleAnual - ctx.deducibleUsado, 0));
       const topeRestante = roundTo2(Math.max(ctx.plan.topeAnualBolsillo - ctx.gastoAcumulado, 0));
 
-      const dias = Math.floor((Date.now() - ctx.fechaInicio.getTime()) / MS_PER_DAY);
-      const enCarencia = dias < ctx.plan.carenciaEspecialidadDias;
-      const carencia: CarenciaStatus = enCarencia
-        ? { enCarencia: true, diasRestantes: ctx.plan.carenciaEspecialidadDias - dias }
-        : { enCarencia: false };
+      const { enCarencia, diasRestantes } = computeCarencia(ctx.fechaInicio, ctx.plan.carenciaEspecialidadDias, new Date());
+      const carencia: CarenciaStatus = enCarencia ? { enCarencia: true, diasRestantes } : { enCarencia: false };
 
       return {
         plan: ctx.planNombre,
