@@ -21,6 +21,7 @@
  * per-category breakdown, and full detail for every failing case (expected
  * vs. observed) so failures can be triaged without re-running anything.
  */
+import { randomUUID } from "node:crypto";
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
@@ -133,11 +134,9 @@ async function drainToUIMessage(response: Response): Promise<UIMessage | undefin
 }
 
 async function runOneCase(evalCase: EvalCase): Promise<ObservedTurn> {
-  // Fresh rate-limit counters per case: cases share a handful of demo
-  // policies (sesionId = poliza in lib/agent/run.ts), and 40 cases would
-  // otherwise trip MAX_MESSAGES_PER_SESSION well before the run finishes.
-  // This is the harness bypassing its OWN in-memory counters between
-  // synthetic turns — not a change to the rate limiter's production logic.
+  // Fresh rate-limit counters per case. Each case also gets its own session
+  // id, so a quote persisted by one case can never leak into another
+  // (regression: a gastro case answered with a stored traumatologia price).
   resetRateLimitStore();
 
   const start = Date.now();
@@ -146,6 +145,7 @@ async function runOneCase(evalCase: EvalCase): Promise<ObservedTurn> {
       (async () => {
         const result = await runChatForPoliza({
           poliza: evalCase.poliza,
+          sesionId: `eval-${evalCase.id}-${randomUUID()}`,
           ip: "127.0.0.1",
           messages: evalCase.messages as ChatMessage[],
         });
@@ -309,7 +309,13 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error("evals/run.ts failed:", err);
-  process.exitCode = 1;
-});
+// The Postgres pool keeps the event loop alive, so exit explicitly once the
+// report is written (a hung process previously looked like a still-running eval).
+main()
+  .catch((err) => {
+    console.error("evals/run.ts failed:", err);
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    setTimeout(() => process.exit(process.exitCode ?? 0), 500);
+  });
