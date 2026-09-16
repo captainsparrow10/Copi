@@ -2,7 +2,7 @@
  * Embedding provider switch (PRD 7.2 / guia-construccion Parte 2 rule 6).
  *
  * This is the only file that knows how to talk to an embedding provider.
- * `LLM_PROVIDER=ollama` calls Ollama's `/api/embed`; `LLM_PROVIDER=google`
+ * `EMBED_PROVIDER` (defaults to `LLM_PROVIDER`): `ollama` calls Ollama's `/api/embed`; `google`
  * uses `@ai-sdk/google`'s embedding model through the `ai` package. Both
  * branches must return vectors of `EMBED_DIM` dimensions (768) so the
  * `fragmentos.embedding` column and pgvector index never need to change.
@@ -23,7 +23,9 @@ config({ path: ".env.local" });
  */
 export type EmbedTask = "document" | "query";
 
-const LLM_PROVIDER = process.env.LLM_PROVIDER ?? "ollama";
+// Embeddings can come from a different provider than chat (e.g. DeepSeek chat has
+// no embeddings API, so Gemini embeds). Defaults to the chat provider.
+const EMBED_PROVIDER = process.env.EMBED_PROVIDER ?? process.env.LLM_PROVIDER ?? "ollama";
 const OLLAMA_URL = process.env.OLLAMA_URL;
 const EMBED_MODEL = process.env.EMBED_MODEL;
 const EMBED_DIM = Number(process.env.EMBED_DIM ?? "768");
@@ -83,7 +85,7 @@ async function embedGoogle(text: string, task: EmbedTask): Promise<number[]> {
 
 /** Embeds `text` for the configured provider, validating the resulting dimension. */
 export async function embedText(text: string, task: EmbedTask): Promise<number[]> {
-  const vector = LLM_PROVIDER === "google" ? await embedGoogle(text, task) : await embedOllama(text, task);
+  const vector = EMBED_PROVIDER === "google" ? await embedGoogle(text, task) : await embedOllama(text, task);
   if (vector.length !== EMBED_DIM) {
     throw new Error(
       `Embedding dimension mismatch: provider returned ${vector.length}, expected EMBED_DIM=${EMBED_DIM}.`,
@@ -94,5 +96,5 @@ export async function embedText(text: string, task: EmbedTask): Promise<number[]
 
 /** Stored alongside each fragment's embedding (PRD 7.3 `fragmentos.embedding_model`). */
 export function embeddingModelLabel(): string {
-  return `${LLM_PROVIDER}:${EMBED_MODEL ?? "unknown"}`;
+  return `${EMBED_PROVIDER}:${EMBED_MODEL ?? "unknown"}`;
 }
