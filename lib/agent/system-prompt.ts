@@ -65,6 +65,7 @@ ALCANCE
 
 FORMATO
 - Español neutro, cálido y claro. Máximo 6 líneas.
+- Texto plano: sin markdown (nada de **, #, listas con guiones ni tablas). La interfaz lo muestra tal cual.
 - Estructura:
   1) Especialidad sugerida y por qué (según la guía).
   2) Hospital más económico y cuánto pagarás ahí.
